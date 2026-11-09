@@ -7,7 +7,7 @@ operon run-external \
   --step STEP --command 'CMD ARGS' \
   [--entity-type TYPE] [--entity-id ID] \
   [--parameter-set PS] [--tool NAME] [--input PATH ...] [--threads N] \
-  [--expected-output PATH ...] \
+  [--expected-output PATH ...] [--events PATH] \
   [--cwd DIR] [--timeout SECONDS] [--backend {local,slurm,ssh}]
 ```
 
@@ -34,7 +34,7 @@ Reads `config/tools.yaml`, runs each tool's `version_args`, and extracts the ver
 operon analyze --analysis NAME \
   [--param NAME=VALUE ...] [--entity-type TYPE] [--entity-id ID] \
   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--detach] \
-  [--backend {local,slurm,ssh}]
+  [--events PATH] [--backend {local,slurm,ssh}]
 ```
 
 For each run, the recipe:
@@ -49,7 +49,7 @@ For each run, the recipe:
 
 Supported result parsers are `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
 
-A recipe can declare a `commands` chain instead of a single `arguments` command (the two are mutually exclusive). The rendered steps execute in order through the same backend under one `analysis_jobs` row; the first step with a non-zero exit code aborts the chain and fails the job with a `step N/M failed: ...` error. Each step gets its own `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`, and every step's argv and exit code is listed in the run's `execution_details.steps`. Intermediate artifacts belong in the deterministic `${work_dir}` scratch directory (`<output_name>.work` next to the output), which is deleted and rebuilt before the run and removed after it finishes or fails; `--keep-partial` preserves it. Any step may produce `${output}`; the non-empty check, content hash, and result parsing run once after the chain completes, and on the SSH backend the remote-output backup and pull bracket the whole chain rather than the producing step. The rendered `commands` participate in the parameter fingerprint. See "Command chains" in the [Recipe field reference](recipe-fields.md) and the `rpsblast_cdd` example in [Result parsers and examples](recipe-parsers-examples.md).
+A recipe can declare a `commands` chain instead of a single `arguments` command (the two are mutually exclusive): the rendered steps execute in order through the same backend under one `analysis_jobs` row, the first non-zero exit aborts the chain with a `step N/M failed: ...` error, and the non-empty check, content hash, and result parsing run once after the chain completes. The full step contract — per-step logs and version probes, the shared `${work_dir}` scratch directory and its interaction with `--keep-partial`, the SSH remote-output backup that brackets the whole chain — is in "Command chains" in the [Recipe field reference](recipe-fields.md), with a worked example in [Result parsers and examples](recipe-parsers-examples.md). The rendered `commands` participate in the parameter fingerprint.
 
 Outside `--dry-run`, `analyze` prints one progress line per file as processing advances, in the form `[i/N] file_id: running|done|failed`; dry runs stay silent and print only the plan table.
 

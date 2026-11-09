@@ -85,7 +85,7 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,bam,cram,other} --role 
                   [--parameter-set NAME] [--out PATH]
 ```
 
-- Runs the built-in QC parsers without any project, database, or manifest, so it works anywhere the archived bytes are readable (e.g. an HPC compute node). It is the remote-measurement counterpart of `qc` and produces the same stage/metric names and units.
+- Runs the built-in QC parsers without any project, database, or manifest, so it works anywhere the archived bytes are readable (e.g. an HPC compute node). It is the remote-measurement counterpart of `qc` and produces the same stage/metric names and units. `--parameter-set` defaults to `builtin_v2`.
 - The file's SHA-256 and size are verified against the manifest values before parsing; a mismatch aborts with a non-zero exit code.
 - `--role` selects the FASTA metric group exactly as in `qc`: `genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` produce `assembly_basic`, other roles produce `sequence_basic`.
 - `--format bam` and `--format cram` run the pysam-backed alignment parser and emit the `alignment_basic` stage (flagstat-convention counts and rates, MAPQ>=30 fraction, NM-tag error rate, insert-size statistics, strand balance, soft-clip fraction, mean depth and coverage breadth); the payload records `parser_backend: pysam`. A corrupt file or a CRAM whose reference is unreachable fails with a non-zero exit code. The `alignment_bam`/`alignment_cram` roles select these formats when a filename has no usable extension.

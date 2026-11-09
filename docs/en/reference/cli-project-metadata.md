@@ -44,7 +44,7 @@ Creates `project.yaml`, an empty current-schema `operon.sqlite`, `config/`, and 
 | `resources` | `max_memory_gb` | integer | `64` | Accepted but unused: no code path reads it. |
 | `execution` | `backend` | choice (`local`, `slurm`, `ssh`) | `local` | Default execution backend; `--backend` overrides it per command. |
 | `execution.slurm` | `partition` | string | `""` | Slurm partition; empty omits `--partition`. |
-| `execution.slurm` | `time` | string | `24:00:00` | Wall-clock limit passed as `--time`. |
+| `execution.slurm` | `time` | string | `""` | Wall-clock limit passed as `--time`; empty omits it (the job gets the cluster default). |
 | `execution.slurm` | `mem_gb` | integer | `0` | Memory requested as `--mem` in GB; `0` omits it. |
 | `execution.slurm` | `extra_sbatch` | list of string | `[]` | Extra single-line `#SBATCH` directives. |
 | `execution.slurm` | `setup_commands` | list of string | `[]` | Single-line shell commands inserted before the recipe command. |
@@ -207,7 +207,7 @@ operon ncbi-datasets --input ncbi_dataset.zip --standardize
 
 `--plan-only` supports only accession download sources. It emits the same `download_plan` and `skipped_existing` output and runs read-only: no download, schema migration, database write, or workflow creation. Manifest filtering does not apply with `--no-archive-files`.
 
-`--retries` defaults to 4 (range 0–10); `--retry-backoff` defaults to 1.0 second and uses exponential backoff. Transient SSL record-layer failures, interrupted connections, timeouts, and HTTP 429/5xx are retried. README-only packages for invalid or withdrawn accessions are identified and reported, while other batches continue; the final summary reports failure and exits non-zero. ZIP reports are read directly, and package members are staged one at a time on the project filesystem rather than accumulating all batches or unpacked content in `/tmp`. A disk-space precheck reports target filesystem, required space, and available space.
+`--timeout` defaults to 300 seconds (per-request read timeout); `--retries` defaults to 4 (range 0–10); `--retry-backoff` defaults to 1.0 second and uses exponential backoff. Transient SSL record-layer failures, interrupted connections, timeouts, and HTTP 408/425/429/5xx are retried. README-only packages for invalid or withdrawn accessions are identified and reported, while other batches continue; the final summary reports failure and exits non-zero. ZIP reports are read directly, and package members are staged one at a time on the project filesystem rather than accumulating all batches or unpacked content in `/tmp`. A disk-space precheck reports target filesystem, required space, and available space.
 
 Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, concurrent downloads are cancelled, no new batches are accepted, temporary ZIPs for the current batch are removed, and the workflow is recorded as `interrupted`. Each accession remains in `adapter_run_items` as `pending`, `downloading`, `completed`, `failed`, or `interrupted`. To resume, rerun the same request with `--resume-run WF_ID`. The new workflow links the old run through `resumes_run_id`; the old run is not rewritten. A changed request fingerprint is rejected. Completed content is skipped exactly from the manifest.
 

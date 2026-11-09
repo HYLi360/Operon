@@ -34,8 +34,8 @@ adopt 清单是 JSON list，每项必有 `path`、`entity_type`、`entity_id`、
 
 `qc-measure` 保留[文件与 QC 命令](cli-files-qc.md)所述格式，`tool` 必为
 `operon.builtin`，不冒充第三方工具。必需 `schema_version`、`tool`、
-`tool_version`、`parameter_set`、`file`、`metrics`；文件含 `sha256` 和
-`size_bytes`，可用 `file_id` 消歧。每项指标含 `qc_stage`、`metric_name`、
+`tool_version`、`parameter_set`、`file`、`metrics`；`file` 对象必含 `sha256`、
+`size_bytes`、`format` 与 `file_role`，可用 `file_id` 消歧。每项指标含 `qc_stage`、`metric_name`、
 `metric_value`，可选 `metric_numeric`、`metric_unit`、`parameter_set`。
 可选 `sequences` 是序列 ID 到长度的映射。
 

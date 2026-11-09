@@ -13,7 +13,7 @@ A single `analyze` run performs, in order:
 5. Renders `${...}` placeholders into one argument array or an ordered `commands` chain;
 6. Looks up a completed cache entry using input, arguments, tool version, and database identity;
 7. On a cache miss, runs the external program and verifies that the file or directory output exists and is non-empty;
-8. Computes the output content hash and writes results into `analysis_results`, `analysis_hits`, and `qc_results` through the result parser.
+8. Computes the output content hash and writes results into `analysis_results`, `analysis_hits`, `analysis_alignments`, and `qc_results` through the result parser.
 
 Configuration fields fall into five groups:
 
@@ -67,7 +67,17 @@ tools:
 
 One tool may contain multiple recipes — for example, the same `blastp` can use different databases, parameters, and result limits. Recipe names should be unique across the whole configuration; otherwise lookups silently use the first matching entry.
 
-A recipe may declare an optional `version:` (a positive integer, default 1; non-positive integers and booleans are configuration errors at load time). `analyze` records the verbatim recipe together with its referenced tool spec as a content-addressed snapshot in the `recipe_snapshots` table, and `analysis_jobs` points back through `recipe_snapshot_id`; any change to the recipe or the tool definition produces a new snapshot. Use `operon recipes history NAME` to list the history and `operon recipes show NAME [--snapshot-id N]` to print a snapshot document as YAML, which a human can copy back into `config/tools.yaml` (the CLI never rewrites the file in place). Recipes can also be edited directly in the TUI Config screen (Tools & Recipes tab): a structured form that bumps the version and records the same snapshot shape on every changed save (an unchanged save is a no-op) — note that TUI saves normalize the YAML formatting and drop hand-written comments, with every version preserved in `recipe_snapshots`. The tool-level keys are editable in the same tab: selecting a tool row opens a form for `description`, `executable`, `version_args`, `version_pattern` and `run_method` — a mode Select over the verbatim command line (the string form), a `conda` environment with optional `bin`/`args` (blank inherits the top-level `conda:` section), a `prefix` token list, `path` (no launcher), or blank for “no `run_method` key” — whose save replaces exactly those keys (a blanked field is removed, so an emptied `executable` falls back to the tool name) while `recipes` and every unmodeled key are kept as parsed, and records one snapshot per recipe of that tool so `operon recipes history` shows the change. The top-level `conda:` section is editable above the tools table: its `bin` and `run_args` are the launcher defaults every tool that inherits them resolves against, a blanked field is removed (falling back to `conda` / `run --no-capture-output`) while the section's other keys are kept as parsed, and the save records a snapshot only for the recipes whose resolved launcher actually changed.
+## Recipe versioning and snapshots
+
+A recipe may declare an optional `version:` (a positive integer, default 1; non-positive integers and booleans are configuration errors at load time). `analyze` records the verbatim recipe together with its referenced tool spec as a content-addressed snapshot in the `recipe_snapshots` table, and `analysis_jobs` points back through `recipe_snapshot_id`; any change to the recipe or the tool definition produces a new snapshot. Use `operon recipes history NAME` to list the history and `operon recipes show NAME [--snapshot-id N]` to print a snapshot document as YAML, which a human can copy back into `config/tools.yaml` (the CLI never rewrites the file in place).
+
+## Editing in the TUI Config screen
+
+The TUI Config screen (Tools & Recipes tab) edits the same file with audited forms:
+
+- **Recipes** — a structured form that bumps the version and records the same snapshot shape on every changed save (an unchanged save is a no-op). TUI saves normalize the YAML formatting and drop hand-written comments; every version is preserved in `recipe_snapshots`.
+- **Tool-level keys** — selecting a tool row opens a form for `description`, `executable`, `version_args`, `version_pattern` and `run_method`: a mode Select over the verbatim command line (the string form), a `conda` environment with optional `bin`/`args` (blank inherits the top-level `conda:` section), a `prefix` token list, `path` (no launcher), or blank for no `run_method` key. A save replaces exactly those keys (a blanked field is removed, so an emptied `executable` falls back to the tool name) while `recipes` and every unmodeled key are kept as parsed, and records one snapshot per recipe of that tool so `operon recipes history` shows the change.
+- **Top-level `conda:` section** — its `bin` and `run_args` are the launcher defaults every tool that inherits them resolves against. A blanked field is removed (falling back to `conda` / `run --no-capture-output`) while the section's other keys are kept as parsed; the save records a snapshot only for the recipes whose resolved launcher actually changed.
 
 For tightly coupled programs that share one execution environment, `commands` replaces `arguments` with ordered command blocks. Each secondary program may declare its own `version_args` and `version_pattern`; see the [command-chain field contract](recipe-fields.md#command-chains-commands).
 
@@ -95,6 +105,8 @@ A string launch prefix is split with shell-style quoting but executed without a 
 executable: busco
 run_method: "mamba run -n busco_6.1.0"
 ```
+
+One substitution applies to the string form: when the first token is the literal `conda` and the top-level `conda.bin` is set to something else (for example `mamba`), that token is replaced by it — with `conda: bin: mamba`, `run_method: "conda run -n x"` executes `mamba run -n x`. The top-level `run_args` are *not* prepended to the string form.
 
 The effective argument array is:
 

@@ -175,7 +175,7 @@ operon run-pipeline \
   [--profile NAME] [--yes] [--compress-archive | --no-compress-archive]
 ```
 
-依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。当判定会复用已有
+依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零；QC 失败时流程在 evaluate 之前停止——实体保留 QC 证据，但不产生新判定。当判定会复用已有
 curated 决定时，命令会先询问一次；`--yes` 在非交互运行时跳过该确认。`--source` 同样接受
 `operon ingest` 支持的 `sftp://` / `remote://` URL：该 URL 会先抓取到临时文件供 ingest
 阶段使用，阶段返回后临时副本即被删除，而 `source_url` 记录原始 URL。
@@ -185,7 +185,8 @@ ingest 阶段的取值，语义与 [ingest](cli-files-qc.md#ingest) 完全一致
 ## report
 
 ```bash
-operon report qc [--entity-type TYPE] [--entity-id ID] [--export] [--include-retired]
+operon report qc [--entity-type TYPE] [--entity-id ID] [--export] \
+  [--wide] [--format {text,tsv,json}] [--out PATH] [--include-retired]
 operon report decisions [--profile NAME] [--include-retired]
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
   [--hits] [--limit N] [--include-retired]

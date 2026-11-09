@@ -20,7 +20,7 @@ qc_summary.tsv / provenance.json / checksums.sha256
 software_versions.tsv / README.md / metadata table snapshots / data/ member files
 ```
 
-Releases default to `copy`, guaranteeing no shared inodes with raw/standardized; `--link hardlink` is an explicit space-optimization option. The release scope of coverage reads the metadata frozen here, not the TaxIDs in the current active database; the release summary/provenance stores the SHA-256 of every metadata TSV, and coverage recomputation verifies these identities first — so active metadata modifications after release creation do not rewrite historical coverage, and tampering with snapshots inside the release directory is rejected.
+Releases default to `copy`, guaranteeing no shared inodes with raw/standardized; `--link hardlink` is an explicit space-optimization option. The release preflight covers only entity types that actually have manifest files (the five core entity tables) — the precise scope and remaining edge cases are catalogued on [Implicit behaviors](../reference/behaviors-and-limitations.md#releases-and-exports). The release scope of coverage reads the metadata frozen here, not the TaxIDs in the current active database; the release summary/provenance stores the SHA-256 of every metadata TSV, and coverage recomputation verifies these identities first — so active metadata modifications after release creation do not rewrite historical coverage, and tampering with snapshots inside the release directory is rejected.
 
 ## Key correctness guarantees
 

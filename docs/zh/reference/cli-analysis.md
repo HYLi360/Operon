@@ -7,7 +7,7 @@ operon run-external \
   --step STEP --command 'CMD ARGS' \
   [--entity-type TYPE] [--entity-id ID] \
   [--parameter-set PS] [--tool NAME] [--input PATH ...] [--threads N] \
-  [--expected-output PATH ...] \
+  [--expected-output PATH ...] [--events PATH] \
   [--cwd DIR] [--timeout SECONDS] [--backend {local,slurm,ssh}]
 ```
 
@@ -44,7 +44,7 @@ operon tools-check
 ## analyze
 
 ```bash
-operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--detach] [--backend {local,slurm,ssh}]
+operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--detach] [--events PATH] [--backend {local,slurm,ssh}]
 ```
 
 按 recipe 自动完成：
@@ -72,16 +72,14 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
 `busco_json` 和 `none`。`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON
 summary，写入 BUSCO 完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
 
-recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（两者互斥）。渲染后的各步
-按顺序通过同一个后端执行，共享一条 `analysis_jobs` 记录；第一个非零退出的步骤中止整条链
-并使 job 失败，错误形如 `step N/M failed: ...`。每一步有独立日志
-`logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码记录在该次运行的
-`execution_details.steps` 中。中间产物放在确定性的 `${work_dir}` 暂存目录（输出旁的
-`<output_name>.work`），运行前删除重建、结束或失败后移除；`--keep-partial` 会保留它。
-任何一步都可以产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次，SSH
-后端的远端输出备份与取回覆盖整条链而非产出它的那一步。渲染后的 `commands` 参与参数指纹。字段契约见
+recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（两者互斥）：渲染后的各步
+按顺序通过同一个后端执行，共享一条 `analysis_jobs` 记录，第一个非零退出以
+`step N/M failed: ...` 中止整条链；非空检查、内容哈希与结果解析在整条链完成后执行一次。
+完整的步骤契约——每步日志与版本探测、共享的 `${work_dir}` 暂存目录及其与
+`--keep-partial` 的交互、覆盖整条链的 SSH 远端输出备份——见
 [Recipe 字段参考](recipe-fields.md) 的"命令链"一节，完整示例见
-[结果解析器与示例](recipe-parsers-examples.md) 的 `rpsblast_cdd`。
+[结果解析器与示例](recipe-parsers-examples.md) 的 `rpsblast_cdd`。渲染后的 `commands`
+参与参数指纹。
 
 非 `--dry-run` 执行时，`analyze` 会按处理进度逐文件打印进度行，形如
 `[i/N] file_id: running|done|failed`；dry-run 保持安静，只打印计划表格。

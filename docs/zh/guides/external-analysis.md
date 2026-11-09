@@ -69,7 +69,7 @@ operon ingest --source proteome_set/ --entity-type organism \
 operon tools-check
 ```
 
-## 运行 BLAST、HMMER 与 BUSCO
+## 运行 BLAST 与 HMMER
 
 修改 `database` 后执行：
 
@@ -222,7 +222,7 @@ analysis/busco_lineage/ANN_000001/FIL_000003.eudicotyledons_odb12.2.busco/
 ```
 
 QC 长表也使用带 lineage 的 stage 保存。宽表因同名指标只能有一列，会折叠为最近值，
-所以正式判定应在 profile 中写 `source.qc_stage`；默认 BUSCO QC profile明确绑定
+所以正式判定应在 profile 中写 `source.qc_stage`；默认 BUSCO QC profile 明确绑定
 `analysis:busco_autolineage`，不会被后来运行的固定 lineage 结果静默替换。
 
 ## 运行其他外部工具

@@ -59,7 +59,7 @@ analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_
 operon adopt --from-manifest adopt_manifest.tsv
 ```
 
-Roles are freely named by your workflow. Every product is materialized under `analysis/adopted/<entity_id>/` (tree/alignment files typically detect as format `other` or `fasta`; directories adopt as `format: directory` with `compression: none`), inherits the ingest idempotency/conflict invariants, and gains `file_lineage` edges back to its inputs. The full batch commits in one transaction; on failure only newly created artifacts are removed. Data-determined units such as the per-subfamily sequence sets are *not* adopted row by row here — the next step fans them out from the adopted assignment table instead.
+Adopt mechanics — materialization under `analysis/adopted/<entity_id>/`, the ingest idempotency/conflict invariants, and the one-transaction batch commit with rollback — are the same as for any other adopt and are described in [Re-register external workflow outputs](external-analysis.md#re-register-external-workflow-outputs-adopt); tree/alignment files typically detect as format `other` or `fasta`, directories as `format: directory`. Data-determined units such as the per-subfamily sequence sets are *not* adopted row by row here — the next step fans them out from the adopted assignment table instead.
 
 ## Step 4: fan out data-determined units, then cascade analyses
 
@@ -108,7 +108,7 @@ operon analyze --analysis iqtree_subfamily
 
 `analyze` runs one job per unit file, serially or through the configured backend, with caching, adoption, and audit exactly as for any other input. Orchestration beyond that — retries, parallelism, and the TreeShrink/Notung batches over the unit products — stays with the workflow manager, as before.
 
-Adopted and fanned-out files are normal manifest members in every other respect: an adopted file with an exact role is selected by `entity_type + file_role + format` as before, a FASTA can be re-QC'd with `operon qc --file-id FIL_...`, and results flow into `analysis_results`/`analysis_alignments`/`qc_results` exactly like analyses over raw files, so each workflow round can build on the products of the previous round.
+Adopted and fanned-out files are normal manifest members in every other respect: a FASTA can be re-QC'd with `operon qc --file-id FIL_...`, and results flow into `analysis_results`/`analysis_alignments`/`qc_results` exactly like analyses over raw files, so each workflow round can build on the products of the previous round.
 
 ## Step 5: evaluate and release
 
@@ -171,7 +171,7 @@ A domain-centric study — for example a superfamily defined by one CDD/Pfam dom
 2. **Select**: `operon select-sequences --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 ...` splits each proteome into domain carriers and non-carriers. Control completeness with the e-value threshold, never a max-hits cutoff — a truncated tool hit list silently breaks the "no hit" complement (see [External Analysis](external-analysis.md)).
 3. **Extract**: `operon extract-domains --analysis rpsblast_cdd --flank 5 --min-length 30 ...` writes the flanked domain FASTA plus a per-region manifest; adopt both products so later recipes and exports can select them.
 4. **Align and build trees externally**: the adopted domain FASTAs feed the external aligner and tree inference exactly as in steps 2–3 above. Measure the resulting alignment on any machine with `operon alignment-qc --alignment ... --outdir ...` (per-sequence and per-column metrics) before adopting the alignment and trees back.
-5. **Date the species tree**: `operon timetree calibrations --taxa A,B,C --out calibrations.tsv` compiles MCMCTree calibration priors from TimeTree (with the required Kumar et al. 2022 citation printed on every query); adopt the TSV alongside the dating inputs. For the stricter reviewed-constraint workflow, `operon timetree fetch` freezes the raw per-pair evidence into an immutable snapshot and `operon timetree calibrate` compiles only approved, rationalized soft bounds onto the rooted tree. See [timetree](../reference/cli-analysis.md#timetree).
+5. **Date the species tree**: `operon timetree calibrations --taxa A,B,C --out calibrations.tsv` compiles MCMCTree calibration priors; adopt the TSV alongside the dating inputs. The stricter reviewed-constraint path (`timetree fetch` + `timetree calibrate`) is described under [Dating with TimeTree](#dating-with-timetree).
 
 ## Dating with TimeTree
 

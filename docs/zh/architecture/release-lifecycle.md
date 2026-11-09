@@ -33,6 +33,8 @@ software_versions.tsv / README.md / 元数据表快照 / data/ 成员文件
 ```
 
 release 默认 `copy`，保证与 raw/standardized 不共享 inode；`--link hardlink` 是显式空间优化选项。
+release 预检只覆盖实际拥有 manifest 文件的实体类型（五张核心实体表）——精确范围与剩余边界
+情形收录于[隐性行为清单](../reference/behaviors-and-limitations.md#release-与-export)。
 coverage 的 release 口径读取这里冻结的 metadata，而不是当前活动数据库中的 TaxID；
 release summary/provenance 保存每张 metadata TSV 的 SHA-256，coverage 计算前复核这些
 身份，因此 release 创建后的活动 metadata 修改不会重写历史覆盖率，release 目录内的

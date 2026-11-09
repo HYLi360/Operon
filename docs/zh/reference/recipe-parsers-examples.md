@@ -17,7 +17,7 @@
 `qc_results`；因此它们会自然出现在 `report qc` 宽表导出中，也可以直接被 QC profile 使用。
 所有产出命中的 parser 写入的具体 metric 名相同——`query_count`（去重后的 query 数）、
 `query_with_hit_count`（有 rank-1 命中的 query 数）、`hit_count`（去重后的 query–subject 对）
-与 `best_evalue`（仅当命中带有 e-value 时）；`busco_json` 则写入 BUSCO 完整率指标。
+与 `best_evalue`（仅当命中指标的字面名为 `evalue` 或 `E-value` 时）；`busco_json` 则写入 BUSCO 完整率指标。
 top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hits_per_query`）。
 带坐标的 parser（`blast_tabular`、`hmmer_domtblout`、`rpsbproc_tabular`）还会把每条解析出的命中以结构化行写入
 `analysis_alignments`——query/subject ID、命中排名、query/subject 区间、e-value、bitscore
@@ -26,7 +26,8 @@ top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hi
 
 ### 10.1 `blast_tabular`
 
-至少需要声明两列（query 与 subject）：
+至少需要声明两列（query 与 subject）。制表字段数与 `result_columns` 不一致的行会被静默跳过
+（`#` 注释行与空行同样跳过），因此多余的表头行不会中止运行，但其数据也不会被解析：
 
 ```yaml
 result_parser: blast_tabular
@@ -185,7 +186,7 @@ result_glob: short_summary.specific.*.json
 `short_summary.specific.*.json`；多个 specific summary 仍然匹配时拒绝猜测，应收窄 glob。
 随附的 `busco_autolineage` 与 `busco_lineage` recipe 使用的就是较窄的
 `short_summary.specific.*.json`；较宽的 `short_summary*.json` 同样有效（唯一的 specific
-summary 优先于 generic），但会匹配更多文件。
+summary 优先于 generic），但会匹配更多文件。省略 `result_glob` 时回退为 `short_summary*.json`。
 
 至少要求 JSON 中存在 `results.Complete percentage` 和 `results.n_markers`。解析结果包括：
 
@@ -341,7 +342,8 @@ BUSCO 的 `-o` 是短 run name，不是输入路径，也不应传完整 `${outp
 另外，BUSCO auto-lineage 使用的 SEPP 会错误地在完整输出路径上执行
 `replace("fasta", "jplace")`。输出路径任何一层都不要含小写 `fasta`。使用
 `${file_id}.busco` 可以避免默认的 `<file_id>.protein_fasta` 名称；`operon` 也会在
-启动 auto-lineage 前检查并拒绝这种危险路径。
+启动 auto-lineage 前检查并拒绝这种危险路径（该守卫按工具名 `busco` 触发，改名复制的
+recipe 不会带上它）。
 
 运行：
 
@@ -518,4 +520,5 @@ tools:
 - 单个小输入实跑并核对 `report analysis` 与 `report qc` 后，再批量运行。
 
 `result_parser: plugin:<name>` 声明外部解析器，Operon 不解析其产物，须显式
-`import-hits`；其他未知解析器名称仍报错。
+`import-hits`；其他未知解析器名称在程序运行结束后的结果回写阶段报错——配置加载
+不校验该名称。

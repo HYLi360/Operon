@@ -46,7 +46,7 @@ operon init [path] [--project-id PRJ_000001] [--name NAME]
 | `resources` | `max_memory_gb` | integer | `64` | 已被接受但未被读取：没有任何代码路径使用它。 |
 | `execution` | `backend` | 取值（`local`、`slurm`、`ssh`） | `local` | 默认执行后端；`--backend` 可按命令覆盖。 |
 | `execution.slurm` | `partition` | string | `""` | Slurm 分区；为空时不写 `--partition`。 |
-| `execution.slurm` | `time` | string | `24:00:00` | 以 `--time` 传入的墙钟时限。 |
+| `execution.slurm` | `time` | string | `""` | 以 `--time` 传入的墙钟时限；为空时不写（作业使用集群默认时限）。 |
 | `execution.slurm` | `mem_gb` | integer | `0` | 以 GB 为单位通过 `--mem` 申请的内存；`0` 表示不写。 |
 | `execution.slurm` | `extra_sbatch` | string 列表 | `[]` | 追加的单行 `#SBATCH` 指令。 |
 | `execution.slurm` | `setup_commands` | string 列表 | `[]` | 插入在 recipe 命令之前的单行 shell 命令。 |
@@ -229,8 +229,8 @@ sequence report 时，请求只包含 `genome,sequence-report`。annotation 的�
 `download_plan`/`skipped_existing`，并以只读连接运行：不下载、不迁移 schema、不写数据库、
 不新增 workflow；
 `--no-archive-files` 模式下此 manifest 筛选不生效。
-`--retries` 默认 4（允许范围 0–10），`--retry-backoff` 默认 1.0 秒并按指数退避；
-SSL record layer failure、连接中断、超时、429/5xx 等瞬时错误会自动重试。
+`--timeout` 默认 300 秒（单次请求读超时）；`--retries` 默认 4（允许范围 0–10），`--retry-backoff` 默认 1.0 秒并按指数退避；
+SSL record layer failure、连接中断、超时、408/425/429/5xx 等瞬时错误会自动重试。
 无效/撤回 accession 的 README-only package 会被识别并报告；其他批次继续导入，
 最后汇总失败并返回非零。ZIP report 直接读取，文件成员逐个暂存到项目所在文件系统，
 不会把所有批次或整包解压内容同时堆积在 `/tmp`。空间预检失败时会报告目标文件系统、

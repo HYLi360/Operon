@@ -47,8 +47,9 @@ only: adoption is a separate explicit operation.
 `qc-measure` produces the existing built-in JSON format, described in
 [File and QC Commands](cli-files-qc.md). Its `tool` is `operon.builtin`, not an
 arbitrary plugin name. `schema_version`, `tool`, `tool_version`, `parameter_set`,
-`file` and `metrics` are required. File identity includes `sha256` and
-`size_bytes`; `file_id` resolves ambiguous identical bytes. Metrics carry
+`file` and `metrics` are required. The `file` object requires `sha256`,
+`size_bytes`, `format` and `file_role`; `file_id` resolves ambiguous identical
+bytes. Metrics carry
 `qc_stage`, `metric_name`, `metric_value`, optional `metric_numeric`,
 `metric_unit`, `parameter_set`. Optional `sequences` maps IDs to lengths.
 

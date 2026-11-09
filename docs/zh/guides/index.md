@@ -10,7 +10,7 @@
 - [Slurm 与 SSH 远程执行](remote-execution.md)
 - [SFTP 远程存储](remote-storage.md)
 - [Remote-First 运行模式](remote-first.md)
-- [QC profile](qc-profiles.md)
+- [QC Profiles](qc-profiles.md)
 - [NCBI Taxonomy 覆盖率](taxonomy-coverage.md)
 - [人工策展、查询与实体生命周期](curation-lifecycle.md)
 - [备份、迁移与续跑](backup-migration.md)

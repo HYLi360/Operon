@@ -13,11 +13,11 @@
 | `rpsbproc_tabular` | rpsbproc tabular report | Per-domain e-value/bitscore hits plus full structured alignment rows |
 | `busco_json` | BUSCO output directory or JSON file | Completeness, single-copy/duplicated, fragmented/missing, lineage and version metadata |
 
-All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Every hit-producing parser writes the same concrete metric names — `query_count` (distinct queries), `query_with_hit_count` (queries with a rank-1 hit), `hit_count` (distinct query–subject pairs), and `best_evalue` (only when a hit carries an e-value); `busco_json` writes the BUSCO completeness metrics instead. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
+All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Every hit-producing parser writes the same concrete metric names — `query_count` (distinct queries), `query_with_hit_count` (queries with a rank-1 hit), `hit_count` (distinct query–subject pairs), and `best_evalue` (only when a hit metric is literally named `evalue` or `E-value`); `busco_json` writes the BUSCO completeness metrics instead. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
 
 ### 10.1 `blast_tabular`
 
-At least two columns (the query and subject columns) must be declared:
+At least two columns (the query and subject columns) must be declared. A row whose tab-field count differs from `result_columns` is silently skipped (as are `#` comment and blank lines), so a stray header line does not abort the run but its data is also not parsed:
 
 ```yaml
 result_parser: blast_tabular
@@ -144,7 +144,7 @@ result_parser: busco_json
 result_glob: short_summary.specific.*.json
 ```
 
-`result_glob` must stay inside the output directory — no absolute paths and no `..`. If it matches exactly one JSON, that file is used; if both generic and specific summaries exist, the unique `short_summary.specific.*.json` wins; if multiple specific summaries still match, the parser refuses to guess and you should narrow the glob. The shipped `busco_autolineage` and `busco_lineage` recipes use the narrower `short_summary.specific.*.json`; the broader `short_summary*.json` is also valid because a unique specific summary wins over a generic one, but it matches more files.
+`result_glob` must stay inside the output directory — no absolute paths and no `..`. If it matches exactly one JSON, that file is used; if both generic and specific summaries exist, the unique `short_summary.specific.*.json` wins; if multiple specific summaries still match, the parser refuses to guess and you should narrow the glob. The shipped `busco_autolineage` and `busco_lineage` recipes use the narrower `short_summary.specific.*.json`; the broader `short_summary*.json` is also valid because a unique specific summary wins over a generic one, but it matches more files. Omitting `result_glob` falls back to `short_summary*.json`.
 
 The JSON must contain at least `results.Complete percentage` and `results.n_markers`. Parsed results include:
 
@@ -279,7 +279,7 @@ tools:
 
 BUSCO's `-o` is a short run name, not an input path, and should not receive the full `${output}`; `--out_path` is the parent directory. Hence the separate use of `${output_name}` and `${output_parent}`.
 
-In addition, the SEPP used by BUSCO auto-lineage incorrectly runs `replace("fasta", "jplace")` on the full output path. No level of the output path may contain lowercase `fasta`. Using `${file_id}.busco` avoids the default `<file_id>.protein_fasta` name; `operon` also checks for and rejects such dangerous paths before launching auto-lineage.
+In addition, the SEPP used by BUSCO auto-lineage incorrectly runs `replace("fasta", "jplace")` on the full output path. No level of the output path may contain lowercase `fasta`. Using `${file_id}.busco` avoids the default `<file_id>.protein_fasta` name; `operon` also checks for and rejects such dangerous paths before launching auto-lineage (this guard is keyed to the tool name `busco`, so a renamed copy of the recipe loses it).
 
 Running:
 
@@ -446,4 +446,6 @@ Before saving a new recipe, confirm item by item:
 - A single small input has been run for real and `report analysis` cross-checked against `report qc` before batch execution.
 
 `result_parser: plugin:<name>` declares an external parser. Operon does not parse
-its output; use `import-hits` explicitly. Other unknown parser names still fail.
+its output; use `import-hits` explicitly. Other unknown parser names fail after the
+program has run, at result write-back — configuration loading does not validate the
+name.

@@ -56,7 +56,7 @@ operon release --version ... --profile ...
 | `CHECKSUM_FAILED` | 文件被改动；恢复原始文件或重新从源头归档（新实体版本） |
 | table 导入报字段错误 | 阅读错误中的行号/字段；修改 CSV/XLSX，或先在 `config/schemas.yaml` 中扩展字段 |
 | `query` 拒绝 UPDATE/PRAGMA | 这是设计行为；修改数据请使用受控命令（`add`、`import table`、`curate` 等） |
-| `tools-check` 报 `cannot launch ...` | 修改 `config/tools.yaml` 的 `executable`/`run_method`；conda 环境写法见 How-to 手册 |
+| `tools-check` 报 `cannot launch ...` | 修改 `config/tools.yaml` 的 `executable`/`run_method`；conda 环境写法见 [外部分析指南](../guides/external-analysis.md) |
 | `analyze` 报数据库不存在 | 把 recipe 的 `database` 改为真实 BLAST/HMM 数据库路径 |
 
 下一步建议阅读 [How-to 操作手册](../guides/index.md) 和 [架构说明](../architecture/index.md)。

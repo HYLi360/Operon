@@ -30,7 +30,7 @@ schema + 交叉引用 + 冲突预检       类型、必填、允许值、外键�
   `data_sources.tsv` 与 `source_links.tsv`。修改这些 report 不会改变数据库。
 - `metadata/` 目录仅为旧布局保留，不自动读写 TSV。
 
-### NCBI Datasets adapter
+## NCBI Datasets adapter
 
 `ncbi-datasets` 在通用 TSV 流程之前增加来源适配层，但不建立第二套数据模型：
 
@@ -44,7 +44,7 @@ NCBI Datasets v2 下载 ────────┘                         │
 在线下载和离线导入使用完全相同的后半段。下载层使用 aiohttp 并发下载多个
 accession 批次（`--download-workers`），在后台 asyncio 线程中运行，完成后通过队列
 把批次交回调用线程导入，避免跨线程使用 SQLite。SSL record layer failure、连接中断、
-超时、429/5xx 等瞬时错误按指数退避自动重试；单批次兼容接口
+超时、408/425/429/5xx 等瞬时错误按指数退避自动重试；单批次兼容接口
 `download_ncbi_dataset()` 同样具有外层 SSL/网络重试。下载使用流式写入、临时文件、
 磁盘空间预检和 ZIP 完整性验证；当 package 异常缺少 assembly report 且配置了 NCBI
 email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 accession 可能
@@ -76,7 +76,7 @@ adapter run 在开始处理前写入 `running` workflow；每个 accession 的�
 通过 `changes.workflow_run_id` 关联具体运行。旧 adapter 异常由显式 `ncbi-reconcile`
 生成和应用补偿计划，使用 `entity_supersessions` 保留所有旧行和文件。
 
-### NCBI Taxonomy coverage 快照
+## NCBI Taxonomy coverage 快照
 
 taxonomy 快照与覆盖率是独立于 NCBI genome adapter 的子系统：其来源包、profile
 类型、分母与报告历史见 [Taxonomy 覆盖率架构](taxonomy-coverage.md)。

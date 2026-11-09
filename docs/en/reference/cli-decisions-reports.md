@@ -116,12 +116,13 @@ operon run-pipeline \
   [--profile NAME] [--yes] [--compress-archive | --no-compress-archive]
 ```
 
-Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs. `--source` also accepts the `sftp://` and `remote://` URLs that `operon ingest` takes: the URL is fetched to a temporary file for the ingest stage and the temporary copy is removed once the stage returns, while `source_url` records the original URL. `--compress-archive`/`--no-compress-archive` override the project's `storage.compress_archive` setting for the ingest stage, exactly as in [ingest](cli-files-qc.md#ingest).
+Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code, and a QC failure stops before evaluation — the entity is left with its QC evidence and no new decision. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs. `--source` also accepts the `sftp://` and `remote://` URLs that `operon ingest` takes: the URL is fetched to a temporary file for the ingest stage and the temporary copy is removed once the stage returns, while `source_url` records the original URL. `--compress-archive`/`--no-compress-archive` override the project's `storage.compress_archive` setting for the ingest stage, exactly as in [ingest](cli-files-qc.md#ingest).
 
 ## report
 
 ```bash
-operon report qc [--entity-type TYPE] [--entity-id ID] [--export] [--include-retired]
+operon report qc [--entity-type TYPE] [--entity-id ID] [--export] \
+  [--wide] [--format {text,tsv,json}] [--out PATH] [--include-retired]
 operon report decisions [--profile NAME] [--include-retired]
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
   [--hits] [--limit N] [--include-retired]

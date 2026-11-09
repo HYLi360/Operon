@@ -113,7 +113,7 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,bam,cram,other} --role 
                   [--parameter-set NAME] [--out PATH]
 ```
 
-- 不依赖任何项目、数据库或 manifest 即可运行内置 QC 解析器，只要归档字节可读（例如 HPC 计算节点）就能执行。它是 `qc` 的远程度量对应物，产出的 stage/metric 名称与单位完全一致。
+- 不依赖任何项目、数据库或 manifest 即可运行内置 QC 解析器，只要归档字节可读（例如 HPC 计算节点）就能执行。它是 `qc` 的远程度量对应物，产出的 stage/metric 名称与单位完全一致。`--parameter-set` 默认 `builtin_v2`。
 - 解析前先按 manifest 值校验文件 SHA-256 与大小；不一致即以非零退出码中止。
 - `--role` 按与 `qc` 相同的规则选择 FASTA 指标组：`genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` 产出 `assembly_basic`，其余 role 产出 `sequence_basic`。
 - `--format bam` 与 `--format cram` 运行基于 pysam 的比对解析器并产出 `alignment_basic` stage（与 flagstat 约定一致的计数与比例、MAPQ>=30 比例、NM tag 错误率、insert size 统计、链平衡、软剪切比例、平均深度与覆盖广度）；payload 记录 `parser_backend: pysam`。损坏的文件或参考不可达的 CRAM 以非零退出码失败。文件名没有可用扩展名时，`alignment_bam`/`alignment_cram` 角色决定这两种格式。

@@ -201,7 +201,7 @@ operon report qc --export
 # 生成 qc/aggregate/qc_results.tsv 与 qc_results.wide.tsv
 ```
 
-## 0 外部 QC 指标（可选）
+## 外部 QC 指标（可选）
 
 例如 BUSCO 结果整理为 TSV 后：
 
@@ -211,7 +211,7 @@ operon import-qc --file busco_results.tsv
 
 外部 TSV 的必填列、可选列以及 `qc-measure` JSON payload 形式见 [import-qc](../reference/cli-files-qc.md#import-qc)。
 
-## 1 运行封装式 BLAST / HMMER / BUSCO 分析
+## 运行封装式 BLAST / HMMER / BUSCO 分析
 
 外部分析程序在 `config/tools.yaml` 中配置。默认模板共六条 recipe：`blastn_nt`、
 `blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`、`busco_lineage`，以及命令链形式的
@@ -293,7 +293,7 @@ BUSCO 的 recipe 将 `output_name` 设为 `${file_id}.busco`；`-o` 使用
 `${output_name}`，`--out_path` 使用 `${output_parent}`。这样还能避开 SEPP 把父路径中的
 `fasta` 错换为 `jplace` 的缺陷。完整结果位于
 `analysis/busco/<ANN_ID>/<FIL_ID>.busco/`。完整配置、JSON 指标名和
-offline 数据集冻结方案见 How-to 第 7 节。
+offline 数据集冻结方案见 [Recipe 字段参考](../reference/recipe-fields.md#数据库与缓存目录)。
 
 覆盖整个绿色植物时，建议继续以 auto-lineage 作为统一 QC 来源，再用内置的经验门限
 profile 按实际 lineage 选择阈值：
@@ -304,13 +304,14 @@ operon evaluate --profile annotation_busco_viridiplantae_odb12_v1 \
 ```
 
 该 profile 明确读取 `analysis:busco_autolineage`；后续固定-lineage复核不会静默改变判定。
-门限来源、`value_by` 和结果共存语义见 How-to 第 12 节与 Recipe 配置参考。
+门限来源、`value_by` 和结果共存语义见 [QC profiles 指南](../guides/qc-profiles.md)与
+[Recipe 字段参考](../reference/recipe-fields.md)。
 
 每次成功执行都会记录工具、版本、完整命令、输入内容哈希、数据库身份与输出
 内容哈希。文件和目录都受相同缓存校验；相同输入、参数、工具版本和数据库身份会自动命中缓存而跳过执行；
 `--force` 可强制重跑。
 
-## 2 运行规则引擎
+## 运行规则引擎
 
 ```bash
 operon evaluate --profile assembly_production_v1
@@ -329,7 +330,7 @@ assembly     ASM_000002  assembly_production_v1  1        FAIL               LOW
 `report decisions` 默认展示最新一条。profile 必须用 `kind: qc` 与同目录中的
 `kind: taxonomy_coverage` 覆盖率画像区分。
 
-## 3 人工策展（可选，但必须留痕）
+## 人工策展（可选，但必须留痕）
 
 ```bash
 operon curate \
@@ -344,7 +345,7 @@ operon curate \
 
 自动判定不会被覆盖，策展写入 `curated_*` 字段和 `changes` 审计表。
 
-## 4 只读 SQL 查询
+## 只读 SQL 查询
 
 ```bash
 # 一个 protein 文件属于哪个 assembly/sample/organism
@@ -362,7 +363,7 @@ WHERE f.file_role='protein_fasta'
 
 `query` 使用只读连接和 authorizer：`SELECT` 与只读 schema PRAGMA 可用，DML、DDL、写 PRAGMA、ATTACH/VACUUM 会被拒绝。
 
-## 5 创建 release
+## 创建 release
 
 ```bash
 operon release --version 2026.08 --profile assembly_production_v1

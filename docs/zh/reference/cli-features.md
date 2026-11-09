@@ -86,7 +86,8 @@ operon features bins (--file-id FIL_… | --entity-type TYPE --entity-id ID)
 ```
 
 - 按 `(seqid, bin)` 计数 feature——首个 bin 覆盖 1-based 坐标 `1..bin_size`，feature 落到包含其
-  1-based `start` 的 bin。默认 `--type gene`（染色体绘图的 gene density；可重复，同 query）。
+  1-based `start` 的 bin。默认 `--type gene`（染色体绘图的 gene density；可重复，同 query）；
+  `--bin-size` 默认 100000。
 - TSV 列：`seqid`、`bin_start`、`bin_end`、`count`、`feature_start_min`、`feature_end_max`
   （bin 内 feature 实际占用的坐标范围）与 `features_per_bp`（count / bin_size）。
 - 选择与跳过语义同 `features query`。

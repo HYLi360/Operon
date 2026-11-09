@@ -77,7 +77,7 @@ operon ncbi-datasets --accession-file accessions.txt \
 
 `--plan-only` accepts only `--accession` or `--accession-file`. Because it checks manifest status and local paths, run it against the real project or a full snapshot. A control/results backup without raw files is not sufficient for inferring production download gaps.
 
-Transient errors such as `[SSL] record layer failure`, interrupted connections, timeouts, and HTTP 429/5xx are retried with exponential backoff:
+Transient errors such as `[SSL] record layer failure`, interrupted connections, timeouts, and HTTP 408/425/429/5xx are retried with exponential backoff:
 
 ```bash
 operon ncbi-datasets --accession-file accessions.txt \

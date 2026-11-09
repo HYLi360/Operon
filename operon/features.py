@@ -5,7 +5,7 @@
 """Flattened GFF3/GTF feature index: per-file Parquet under ``index/features``.
 
 Every annotation manifest row may own a queryable feature cache at
-``{index_root}/features/{file_id}.{sha256}.v1/`` holding ``data.parquet`` and
+``{index_root}/features/{file_id}.{sha256}.v2/`` holding ``data.parquet`` and
 a ``meta.json`` identity/commit marker. The archive bytes stay immutable;
 the index is unregistered rebuildable derived data (INV-2), keyed by the
 manifest identity (INV-3), and therefore never a member of the manifest, a

@@ -144,6 +144,10 @@ Supported parameter constraints:
 | `pattern` | Regex the entire value must match |
 | `choices` | Optional list of allowed values |
 
+Unrecognized keys inside a parameter spec are ignored silently (unlike `commands`
+blocks, which reject unknown keys) — a misspelled `required` leaves the parameter
+optional, so validate the file with `operon tools-check` after hand edits.
+
 At runtime, use the repeatable `--param NAME=VALUE`:
 
 ```bash
@@ -250,7 +254,7 @@ commands:
 The shipped `rpsblast` + `rpsbproc` command-chain recipe (`rpsblast_cdd`) is the worked example in [Result parsers and examples](recipe-parsers-examples.md) 10.5.
 
 The `commands` system is NOT intended to replace Snakemake or Nextflow, but rather to bundle tools that are frequently used together
-to reduce repetitive work, and avoid using the “bulky” Snakemake or Nextflow in such scenario. We have intentionally imposed the following hard constraints on the `commands`:
+to reduce repetitive work, instead of reaching for the heavyweight Snakemake or Nextflow in such a scenario. The following hard constraints are deliberately imposed on `commands`:
 
 - Each program must use a shared runtime environment — one recipe, one environment. For example, if you run the RPS-BLAST recipe using Conda, you must have both NCBI-BLAST+ and `rpsbproc` installed in the same Conda environment. Per-step environment keys (such as `run_method` inside a command block) are rejected when the recipe is loaded; pipelines that genuinely span multiple environments belong to Snakemake/Nextflow, with their results brought back into the database via `operon adopt`.
 
@@ -322,7 +326,7 @@ For `blast_tabular`:
 | `numeric_columns` | same as `hit_metric_columns` | Subset of hit metrics parsed as numbers |
 | `query_column` | first column | Query ID column |
 | `subject_column` | second column | Subject ID column |
-| `max_hits_per_query` | `5` | EAV hit rows kept per query in `analysis_hits` |
+| `max_hits_per_query` | `5` | EAV hit rows kept per query in `analysis_hits`; `0`/null/empty behave as `5` (the cap cannot be disabled) |
 
 ### Alignment column mapping keys
 
@@ -368,6 +372,7 @@ A completed analysis is reused only when all of the following identity component
 
 ```text
 analysis name
++ tool name (the `tools:` key the recipe lives under)
 + file_id
 + input content hash
 + rendered arguments
@@ -385,7 +390,7 @@ After a database record hits, `operon` also checks that the output artifact stil
 
 That fingerprint does **not** cover every parser/output field: `result_columns`, `hit_metric_columns`, `numeric_columns`, `query_column`, and `subject_column` are absent from it. Changing one of those five alone therefore leaves the fingerprint unchanged, the existing `completed` job is treated as a cache hit, and `operon` neither re-runs the program nor re-parses the stored output — the new column contract only takes effect for jobs that are actually re-executed. Use `--force` to force that re-run.
 
-The second-level continuation when the exact identity misses (verified-output adoption): if an old `completed` job exists for the same `(analysis, file_id)` whose input content hash matches the current one, and whose recorded output artifact is still on disk with a byte-identical hash, `operon` does not recompute. Instead it adopts that output into the current fingerprint — inserting a new `completed` row pointing at the same output under the current parameter fingerprint/database identity (linked to the original `workflow_run_id`), and recording the adoption reason in the `changes` audit table against that new `analysis_job` row. The result record of the adopted run carries `"status": "adopted"`; the manifest `files.status` is not changed by adoption. This covers scenarios such as software upgrades changing the fingerprint formula, or recipe renames. Outputs that were modified, or inputs whose content changed, are not adopted and are recomputed as usual. Adoption applies only to completed results with verified outputs; `--force` semantics are unchanged and always recompute. In dry-run output, the status column shows `cached`/`adoptable`/`planned`, meaning a completed-cache hit, the adoption path, and actual execution respectively; under `--force`, even a cache that would have hit shows as `planned`. Once a recipe resolves at least one runtime parameter, second-level adoption is disabled and only exact cache hits can reuse a result.
+The second-level continuation when the exact identity misses (verified-output adoption): if the most recent `completed` job for the same `(analysis, file_id)` has an input content hash matching the current one, and whose recorded output artifact is still on disk with a byte-identical hash, `operon` does not recompute. Instead it adopts that output into the current fingerprint — inserting a new `completed` row pointing at the same output under the current parameter fingerprint/database identity (linked to the original `workflow_run_id`), and recording the adoption reason in the `changes` audit table against that new `analysis_job` row. The result record of the adopted run carries `"status": "adopted"`; the manifest `files.status` is not changed by adoption. This covers scenarios such as software upgrades changing the fingerprint formula, or recipe renames. Outputs that were modified, or inputs whose content changed, are not adopted and are recomputed as usual. Adoption applies only to completed results with verified outputs; `--force` semantics are unchanged and always recompute. In dry-run output, the status column shows `cached`/`adoptable`/`planned`, meaning a completed-cache hit, the adoption path, and actual execution respectively; under `--force`, even a cache that would have hit shows as `planned`. Once a recipe resolves at least one runtime parameter, second-level adoption is disabled and only exact cache hits can reuse a result.
 
 `--force` only means "ignore an otherwise valid completed cache". It preserves the historical job record, marks the old record `superseded`, deletes the exact old output target, and creates a new job. It cannot fix wrong parameters, a wrong output name, or failures of the external program itself.
 
@@ -421,7 +426,7 @@ Behavior differs per backend and per document age:
 
 ## Slurm resource overrides
 
-When the project uses the Slurm execution backend (`execution.backend: slurm` in `project.yaml`, or `--backend slurm` on the command line), all recipes share the resource settings of `execution.slurm` by default. An individual recipe can override same-named fields with a `slurm:` mapping (empty values and empty strings do not override) — for example, adjusting memory and time limit for BUSCO alone:
+When the project uses the Slurm execution backend (`execution.backend: slurm` in `project.yaml`, or `--backend slurm` on the command line), all recipes share the resource settings of `execution.slurm` by default. An individual recipe can override same-named fields with a `slurm:` mapping (null values and empty strings do not override scalar fields; an empty list such as `extra_sbatch: []` clears the project-level value) — for example, adjusting memory and time limit for BUSCO alone:
 
 ```yaml
 tools:
@@ -443,7 +448,7 @@ Overridable fields match `execution.slurm`:
 | Field | Default | Meaning |
 |---|---|---|
 | `partition` | empty | Slurm partition; empty means no `--partition` is written |
-| `time` | `24:00:00` | Job time limit |
+| `time` | empty | Job time limit; empty means no `--time` is written and the job gets the cluster default |
 | `mem_gb` | `0` | Memory limit (GB); `0` means no `--mem` is written |
 | `extra_sbatch` | `[]` | Extra `#SBATCH` lines, e.g. `["--gres=gpu:1"]` |
 | `setup_commands` | `[]` | Lines inserted before the command, e.g. `["module load blast/2.15"]` |

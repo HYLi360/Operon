@@ -12,8 +12,8 @@ JSON summary parser 原生接入；QUAST、Merqury、Kraken2、CheckM2 等尚未
 下游流程与数据库之间的契约由 `operon export` 与 `operon adopt` 两端构成闭环：
 export 把所选实体按文件身份物化为
 `data/<entity_type>/<entity_id>/<文件名>` 布局，并附带 `manifest.tsv`（含物化后复算的
-SHA-256）、`qc.tsv` QC 长表快照、`checksums.sha256` 和 `provenance.json`（输入侧
-manifest）；外部工作流消费这组产物后，用 adopt 把派生 artifact 回注册为 manifest
+SHA-256）、`taxa.tsv` 实体表、`qc.tsv` QC 长表快照（除非 `--no-qc`）、`checksums.sha256`
+和 `provenance.json`（输入侧 manifest）；外部工作流消费这组产物后，用 adopt 把派生 artifact 回注册为 manifest
 一等公民——物化到 `analysis/adopted/<entity_id>/`，继承 ingest 的幂等/冲突不变量，
 并在 `file_lineage` 中记录 file 到 file 的谱系边（输出侧 manifest）。被 adopt 的
 产物可继续被 QC、evaluate、export、release，并被 `analyze` 选为下游 recipe 的输入

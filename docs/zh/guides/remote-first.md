@@ -154,8 +154,8 @@ operon pull --remote mycluster --file-id FIL_000001
   `database_checksum`），镜像换主机或换 root 后要重新部署。
 - **`database` 建议写项目相对路径。** 绝对路径或 `~/...` 会原样出现在远端命令中，远端
   必须存在同一路径；项目相对路径才会映射进远端 root。
-- **`--dry-run` 只是预览。** 它跳过数据库检查，也不经后端探测工具版本，因此部署要靠
-  首次真实运行验证，而不是靠 dry run。
+- **`--dry-run` 不执行任何命令。** 它会完成无需执行命令的校验（recipe 数据库的存在性与
+  供应状态），但不经非本地后端探测工具版本，因此部署最终仍靠首次真实运行验证。
 - **`analyze` 不会把字节取回本地。** `REMOTE_ONLY` 输入在原位读取，状态仍是
   `REMOTE_ONLY`；`standardize`、`release`、`export` 需要本地字节，先 `pull`。
 - **结果缓存带位置属性。** 数据库身份包含 SSH 主机与 root，因此同一 recipe 在 `local`

@@ -14,8 +14,8 @@
 5. 将 `${...}` 占位符渲染成单个参数数组或有序 `commands` 命令链；
 6. 用输入、参数、工具版本和数据库身份查找已完成缓存；
 7. 未命中缓存时运行外部程序，并验证文件或目录输出存在且非空；
-8. 计算输出内容哈希，通过 result parser 写入 `analysis_results`、`analysis_hits` 和
-   `qc_results`。
+8. 计算输出内容哈希，通过 result parser 写入 `analysis_results`、`analysis_hits`、
+   `analysis_alignments` 和 `qc_results`。
 
 配置字段可按以下五类理解：
 
@@ -70,23 +70,32 @@ tools:
 同一个 tool 可以包含多个 recipe，例如同一个 `blastp` 可分别使用不同数据库、参数和
 结果上限。recipe 名在整个配置中应保持唯一，否则查找时只会使用最先遇到的同名项。
 
+## recipe 版本与快照
+
 recipe 可声明可选的 `version:`（正整数，缺省 1；非正整数或布尔值在加载时报配置
 错误）。`analyze` 会把 recipe 原文与其引用的 tool spec 一起作为内容寻址快照记录到
 `recipe_snapshots` 表，`analysis_jobs` 通过 `recipe_snapshot_id` 回指；recipe 或
 tool 定义的任何变更都产生新快照。历史用 `operon recipes history NAME` 查看，
 `operon recipes show NAME [--snapshot-id N]` 以 YAML 打印快照文档，供人工写回
-`config/tools.yaml`（CLI 不做原地改写）。也可以直接在 TUI 的 Config 界面
-（Tools & Recipes 标签页）中编辑 recipe：结构化表单在每次内容有变化的保存时递增版本并记录
-相同形态的快照（内容未变的保存是 no-op）——注意 TUI 保存会规范化 YAML 格式并丢弃手写注释，所有版本均
-保存在 `recipe_snapshots` 中。同一标签页还可以编辑 tool 层字段：选中某个工具行会打开
-`description`、`executable`、`version_args`、`version_pattern` 与 `run_method` 的表单——`run_method`
-是一个模式 Select：逐字命令行（字符串形式）、`conda` 环境（可选的 `bin`/`args`，留空则继承顶层
-`conda:` 段）、`prefix` token 列表、`path`（无启动器），或留空表示“没有 `run_method` 键”。保存只替换
-这几个键（留空的字段被删除，因此清空的 `executable` 回退为工具名），而 `recipes` 以及任何未建模的键都按
-原样保留；每次保存为该工具的每个 recipe 各记录一条快照，`operon recipes history` 因此能看到这次变更。
-工具表上方还可以编辑顶层 `conda:` 段：其 `bin` 与 `run_args` 是所有继承它们的工具解析启动器时的默认值，
-留空的字段会被删除（回落到 `conda` / `run --no-capture-output`），段内其它键按原样保留，保存只为
-**解析出的启动器确实发生变化**的那些 recipe 记录快照。
+`config/tools.yaml`（CLI 不做原地改写）。
+
+## 在 TUI Config 界面编辑
+
+TUI 的 Config 界面（Tools & Recipes 标签页）以受审计的表单编辑同一份文件：
+
+- **recipe**——结构化表单在每次内容有变化的保存时递增版本并记录相同形态的快照
+  （内容未变的保存是 no-op）。TUI 保存会规范化 YAML 格式并丢弃手写注释；所有版本
+  均保存在 `recipe_snapshots` 中。
+- **tool 层字段**——选中某个工具行会打开 `description`、`executable`、
+  `version_args`、`version_pattern` 与 `run_method` 的表单：`run_method`
+  是一个模式 Select——逐字命令行（字符串形式）、`conda` 环境（可选的 `bin`/`args`，
+  留空则继承顶层 `conda:` 段）、`prefix` token 列表、`path`（无启动器），或留空表示
+  没有 `run_method` 键。保存只替换这几个键（留空的字段被删除，因此清空的
+  `executable` 回退为工具名），而 `recipes` 以及任何未建模的键都按原样保留；每次保存
+  为该工具的每个 recipe 各记录一条快照，`operon recipes history` 因此能看到这次变更。
+- **顶层 `conda:` 段**——其 `bin` 与 `run_args` 是所有继承它们的工具解析启动器时的
+  默认值。留空的字段会被删除（回落到 `conda` / `run --no-capture-output`），段内其它键
+  按原样保留；保存只为**解析出的启动器确实发生变化**的那些 recipe 记录快照。
 
 对于共享同一执行环境的紧耦合程序，`commands` 用有序 command block 取代 `arguments`。
 每个附加程序可以声明自己的 `version_args` 与 `version_pattern`；完整约束见
@@ -116,6 +125,11 @@ run_method: ""
 executable: busco
 run_method: "mamba run -n busco_6.1.0"
 ```
+
+字符串形式有一个替换规则：当首个 token 是字面 `conda`，而顶层 `conda.bin` 设置为其他值
+（例如 `mamba`）时，该 token 会被替换——设置 `conda: bin: mamba` 后，
+`run_method: "conda run -n x"` 实际执行 `mamba run -n x`。顶层 `run_args` **不会**被附加到
+字符串形式。
 
 实际参数数组相当于：
 

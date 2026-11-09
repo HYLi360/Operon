@@ -33,6 +33,6 @@ operon --project ./demo-project report qc --entity-type assembly
 - `ANN_000003` 因 `CDS_NOT_MULTIPLE_OF_3` 与 `BROKEN_GFF3_PARENTS` 被 FAIL。
 - 其他实体 PASS。
 
-验证 release：本演示的目录是 `./demo-project/releases/2026.08.demo`，具体步骤见[创建 release](first-project.md)。
+验证 release：本演示的目录是 `./demo-project/releases/2026.08.demo`，具体步骤见[创建 release](first-project.md#创建-release)。
 
 可实跑[独立 toy 插件文件闭环](../reference/plugin-examples.md)。

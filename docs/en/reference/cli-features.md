@@ -115,7 +115,7 @@ operon features bins (--file-id FIL_… | --entity-type TYPE --entity-id ID)
 - Counts features per `(seqid, bin)` — the first bin covers 1-based
   coordinates `1..bin_size`, and a feature lands in the bin containing its
   1-based `start`. Default `--type gene` (gene density for chromosome
-  plotting; repeatable like `features query`).
+  plotting; repeatable like `features query`); `--bin-size` defaults to 100000.
 - TSV columns: `seqid`, `bin_start`, `bin_end`, `count`,
   `feature_start_min`, `feature_end_max` (the coordinates the bin's features
   actually occupy) and `features_per_bp` (count divided by bin size).

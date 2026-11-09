@@ -42,6 +42,7 @@
 - **每次可写打开都会重建 schema 对象。** 视图重建会改变 `PRAGMA schema_version`，即使没有任何数据变化也会在每次可写打开时写入 WAL；只读命令在此之前就返回（`database.py`）。
 - **来自更新 schema 的数据库会被静默接受。** 没有任何代码读取或比较存储的 `database/SCHEMA` 标记，`SCHEMA_VERSION` 只被写入和报告：旧二进制会打开该数据库，用自己的版本字符串重写标记并重建自己的视图（`database.py`、`cli/`）。
 - **`project.yaml` 不做校验，`init` 也不是原子的。** 缺失或改名的键会抛出裸 `KeyError`（traceback，退出码 1）而非配置错误；`Project.init` 先写 `project.yaml`，因此后续失败会留下半初始化项目——`Project.find` 会接受它，而重试会拒绝重新初始化（`config.py`、`cli/`）。
+- **`entity_state` 中有一行心跳记录。** 每次可写打开都会 upsert `('database', 'SCHEMA')` 行，以当前 schema 版本作为 message，且仅在 message 变化时更新，因此该行兼任“最近一次可写打开”的标记（`database.py`）。
 - **三个默认配置键没有任何读取方。** `resources.max_memory_gb`、`qc.sample_reads_for_duplicates` 与 `project.description` 由 `operon init` 写入，但没有任何代码路径读取（只有 `resources.default_threads` 与 `qc.default_profile` 会被消费），设置它们既无效果也无警告（`config.py`、`tools/_run.py`）。
 
 ## 时间戳、日志与排序
@@ -100,6 +101,7 @@
 - **参考数据库身份取决于数据库模式。** 未显式给出 `database_checksum` 时，单文件数据库按完整内容哈希，目录数据库只按每个文件的相对路径、大小与 mtime 指纹化，而 `database_mode: mutable_cache` 完全忽略内容；因此目录型数据库（BLAST 索引目录）在 touch 或复制后会产生虚假缓存未命中，在保持大小与 mtime 的就地修改后又可能复用陈旧结果，其单个索引文件也永远不会获得独立身份（`tools/_inputs.py`）。
 - **工具版本探测有一个粗糙的回退。** 版本正则未命中时，第一个像版本的 token——或整个首行截断到 200 字符——会成为 `tool_version`；探测原始输出在 provenance 中截断到 4000 字符（`tools/_probe.py`）。
 - **BLAST 表格解析静默丢弃。** 字段数与 `result_columns` 不符的行被无错跳过，`max_hits_per_query`（默认 5）截断每个 query 存储的 hits——`analysis_results` 汇总可能偏少（`tools/_results.py`）。
+- **Recipe 顶层未知键被静默忽略。** 与 `commands` 块拒绝未知键不同，recipe 层的未知键不会报错，因此 `output_kindd` 这类拼写错误永远不会有提示（`tools/_config.py`）。
 - **结果解析不是原子的。** hits 与 results 分别在两个事务中写入；解析中途崩溃会给随后标记为 failed 的作业留下部分 hits（`tools/_results.py`）。
 - **空输出即失败。** 只有退出码为 0 且每个期望输出都存在且非空，run 才是 `completed`；合法的 0 字节 TSV 会让 run 失败（`workflow.py`）。
 - **BUSCO auto-lineage 拒绝路径中含 `fasta` 的输出。** 这是对 SEPP 路径改写缺陷的刻意防御；见 [recipe 示例](recipe-parsers-examples.md)（`tools/_plan.py`）。
@@ -109,7 +111,7 @@
 - **被中断的外部命令不会留下 run 行。** `run-external`/`analyze` 在结束时写入 `workflow_runs` 行；运行中途的 `KeyboardInterrupt`/`ShutdownRequested` 只留下 stdout/stderr 日志和（分析场景）一行 `interrupted` 的 `analysis_jobs`（`workflow.py`）。
 - **`--threads` 参与缓存指纹。** 解析后的线程数（默认 4）会被哈希进参数指纹，因此即使工具输出完全相同，改动线程数也会让每个文件重跑（`tools/_inputs.py`）。
 - **是否参与 array 对缓存不可见。** 一个批次以单个 Slurm job array 还是逐文件作业提交，从不进入参数指纹或缓存身份，因此两种提交形式共享同一份完成缓存（`tools/_inputs.py、tools/_run.py`）。
-- **`analyze` 不向任何后端传超时。** 因此挂起的工具在本地和 SSH 上都会无限运行，Slurm 后端只受默认 `--time=24:00:00` 限制（`tools/_execute.py`、`execution.py`）。
+- **`analyze` 不向任何后端传超时。** 因此挂起的工具在本地和 SSH 上都会无限运行，`slurm.time` 未设置时 Slurm 后端只受集群默认时限约束（`tools/_execute.py`、`execution.py`）。
 - **`analyze` 可能改写 manifest。** 配置了 SSH `storage_remote` 时，本地字节缺失而远端副本校验通过的文件会被静默改标为 `REMOTE_ONLY` 并留下审计行，因此一次分析会改动文件状态（`tools/_plan.py`）。
 - **陈旧 `RUNNING` 清扫按当前 analysis 限定范围。** 非 dry 的 `analyze` 只把本 analysis 遗留的 `RUNNING` 行标为 `interrupted`；并发跑同一 recipe 的两个进程仍可能互相清扫对方的活作业（`tools/_cache.py`）。
 - **结果汇总基于被截断的 hit 集。** `hit_count`、`best_evalue` 与由此得出的“top hit”只用 `max_hits_per_query` 之内保留的 hits，`hit_rank` 是该行在结果文件中的位置而非得分排序，因此汇总可能偏少并给出错误顺序（`tools/_results.py`）。
@@ -141,6 +143,8 @@
 - **`timetree fetch` 使用固定的请求间隔。** 1.0 秒延迟是硬编码的，没有对应开关；快照发布拒绝覆盖，单个非法 pair 会中止整次运行；`load_snapshot` 会重新校验每个原始响应，却从不复查记录下来的 `pairs_sha256`；`calibrations --out` 非原子地覆盖目标文件；查询子命令需要项目，并且即使在缓存命中时也会写 `workflow_runs` 行（`timetree.py`）。
 - **校准汇总是启发式的。** 嵌套对象会被展平，第一条携带约六种 age 键别名的记录胜出；`timeline` 把任何响应体当 CSV 解析而不做格式检查；校准行会嵌入本地缓存的绝对路径与原始检索时间（`adapters/timetree.py`）。
 
+- **`analyze` 永远看不到被取代或已退役的实体。** 输入选择会排除出现在 `entity_supersessions` 或 `effective_retired_entities` 中的实体，因此只匹配已退役文件的 recipe 会报“没有候选文件”，且不解释原因（`tools/_inputs.py`）。
+
 ## 执行后端
 
 - **本地 CPU 时间可能多计。** `cpu_seconds` 是 `getrusage(RUSAGE_CHILDREN)` 的差值，包含同进程并发回收的其他子进程；Windows 没有 `resource` 模块，因此该值为 `None`（`execution.py`）。
@@ -153,7 +157,7 @@
 - **资源采样只观察直接子进程。** 使用默认的 `conda run`/`mamba run` 启动器时，`max_rss_mb`/`avg_rss_mb` 描述的是启动器进程，而不是它启动的工具（`execution.py`）。
 - **失败的环境采集仍会作为该 run 的环境入库。** 占位文档 `{"capture_schema": 1, "capture_status": "failed"}` 会成为作业的环境，随后的 `strict` 比较看到 `unavailable` 并降级为 `warn`（`execution.py`、`workflow.py`）。
 - **本地 Slurm 的取消失败是静默的。** 本地 Slurm 后端在超时和中断时忽略 `scancel` 失败，而远端 Slurm 路径会记录 `cancellation_error` 并给出警告；轮询中途的 `squeue`/SSH 控制失败会直接中止而不调用 `scancel`，因此正在运行的作业可能被遗留（`execution.py`）。
-- **Slurm 默认值很宽松。** `--time=24:00:00`，未配置时没有 partition 也没有内存限制，`poll_interval` 为 15 秒（有效下限 0.1 秒）（`execution.py`）。
+- **Slurm 默认值很宽松。** 未配置时不写 `--time`、partition 或内存限制——作业使用集群默认值；`poll_interval` 为 15 秒（有效下限 0.1 秒）（`execution.py`）。
 - **`setup_commands` 在作业切换目录之前执行。** 它们先于载荷的 `cd` 运行，因此其中的相对路径行为与载荷不同（`execution.py`）。
 - **SSH 后端用重命名备份保护既有远端输出。** 运行前，`remote_root` 下已存在的远端输出被重命名为 `<path>.operon-prev-<uuid>`；运行成功且新输出拉回校验通过后删除备份，失败或中断时尽力把备份恢复原位（先移除任何半成品新远端输出）。回拉仍只在成功时发生，因此 `--keep-partial` 依旧只决定失败或中断后哪些本地产物被保留——远端备份的恢复与它无关（`execution.py`）。
 - **Slurm array 提交是 opt-in 且仅限 Slurm。** recipe 的 `slurm.array: true` 只在 executor 支持时才把未命中缓存的文件作为单个 job array 提交——本地 Slurm 后端始终支持，SSH 后端仅在 `scheduler: slurm` 时支持（SSH 直连的 `run_array` 为 `None`）——且至少有两个文件需要计算；其余情形一律回落为逐文件提交。记账按 task 进行（`sacct -j <array_id>_<index>`，因此 `0:9`→137 的信号折叠逐 task 生效），中断时整个 array 以一次 `scancel` 取消：已写出各自 `<run_id>.exitcode` 文件的 task 视为已完成，其余标记为 `interrupted`，下次运行重跑（`execution.py`、`tools/_run.py`）。
@@ -177,6 +181,8 @@
 - **no-op 的 push 不会认领远端。** 只有在条目变化时才写远端 manifest，因此全部跳过的 push 会让它没有 `project_id`，而 `pull` 从不写远端 manifest，所以对无主远端的“认领”并不持久（`remotes.py`）。
 - **上传在发布前于暂存名上完成校验。** `put` 先写入 `<目标>.operon-tmp-<uuid>` 暂存路径，当调用方给出期望身份时在暂存路径上校验 sha256 与大小，然后才重命名到位；校验失败会删除暂存字节，因此被截断的上传绝不会占据最终路径，下一次 push 只会重新上传（`remotes.py`）。
 
+- **`sftp://` 抓取 URL 拒绝密码。** 携带密码的 URL 是 `ValidationError`；认证只支持 SSH 密钥（`remotes.py`）。
+
 ## release 与 export
 
 - **哈希覆盖范围比文件名暗示的要小。** `checksums.sha256` 只覆盖数据文件；`provenance.json` 对元数据 TSV 只携带一个 `metadata_sha256`，`manifest.tsv` 只被哈希进数据库汇总与 `releases` 行，而 `qc_summary.tsv`、`decisions.tsv`、`profile_history.tsv`、`exclusions.tsv`、`software_versions.tsv` 与 `README.md` 的哈希不在任何地方（`release.py`）。
@@ -192,6 +198,8 @@
 - **export 符号链接存储完全解析后的目标。** `--link symlink` 指向 `source.resolve()`；移动项目会断链，不过经链接的校验仍然通过（`export.py`）。
 - **release/export 失败可恢复。** 两个命令都先 staging 并在失败时清理，不会主动发布不完整目标；操作系统级崩溃仍可能留下隐藏 staging 目录，需要后续清理。
 - **`--link hardlink` 会与 `raw/` 共享 inode。** 选择硬链接会让 release 与 raw 归档重新共享 inode，而不可变性的论证正是以不存在共享为前提；默认值及其理由见 [release 架构页面](../architecture/release-lifecycle.md)（`release.py`）。
+
+- **`REMOTE_ONLY` 成员会让 release 与 export 在产出任何输出之前停止。** 预检抛出的错误会点名文件并给出恢复它的确切 `operon pull` 命令，而不是拖到校验和阶段才失败（`release.py`、`export.py`）。
 
 ## 生命周期与身份解析
 
@@ -229,6 +237,9 @@
 - **名称模式与诊断转储的行为不对称。** `exclude_name_patterns` 是无锚定、区分大小写的 `re.search` 模式：编译时只对目标 rank 候选名测试，报告时则对每个谱系节点名测试，因此一个模式可以静默把某个支系同时从分子与分母中移除。`merged.dmp`/`delnodes.dmp` 是可选的，因此同一退役 TaxID 会随导入格式不同解析为 UNKNOWN、MAPPED_ALIAS 或 DELETED_TAXID；taxonomy 导入只接受本地文件——没有 URL、超时或重试选项（`taxonomy.py`、`coverage.py`）。
 - **表格导入与元数据导入对 CSV 的处理不一致。** `operon table import` 用 `csv.DictReader` 读取 `.csv`，因此 `#` 行是数据，列数不齐的行会以 `unknown field(s) [None]` 呈现，而不是 TSV 那套结构性注释与字段数规则（`table_import.py`、`schema.py`）。
 - **TUI Config 界面在文件消失后会重启 profile/recipe 版本号。** 删除或重命名 `config/profiles/<name>.yaml`（或从 `config/tools.yaml` 中移除某个 recipe）会让编辑器读到“版本不存在”，于是下次保存重新写入 **version 1**；内容未变时 `INSERT OR IGNORE` 会静默复用旧快照，但内容变化时会插入第二行且 `profile_version = 1`，同一 name 的版本号不再单调。该界面也无法移除 `max_hits_per_query`（清空输入会保留文件中的值并提示“unchanged”）（`tui/screens/config.py`、`tui/actions.py`）。
+
+- **分母为零或为空对 coverage 是致命的。** 某个 rank 分母为空会让 reference set 编译失败；分母非正时百分比计算抛校验错误——空 rank 永远不会静默报告 0 % 或 100 %（`coverage.py`）。
+- **失败的 `taxonomy compile` 会记录为失败的 workflow run。** `taxonomy_compile` 的 run 行在错误重新抛出前写入，因此失败的尝试也会出现在 `workflow list` 中（`taxonomy.py`）。
 
 ## NCBI Datasets 适配器
 

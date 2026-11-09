@@ -156,6 +156,9 @@ parameters:
 | `pattern` | 整个值必须匹配的正则表达式 |
 | `choices` | 可选的允许值列表 |
 
+参数 spec 内的未知键会被静默忽略（与 `commands` 块拒绝未知键不同）——拼错的
+`required` 会让参数保持可选，因此手工编辑后请用 `operon tools-check` 校验文件。
+
 运行时使用可重复的 `--param NAME=VALUE`：
 
 ```bash
@@ -382,7 +385,7 @@ database_mode: mutable_cache
 | `numeric_columns` | 同 `hit_metric_columns` | 按数值解析的 hit metric 子集 |
 | `query_column` | 第一列 | query ID 列 |
 | `subject_column` | 第二列 | subject ID 列 |
-| `max_hits_per_query` | `5` | `analysis_hits` 中每个 query 保留的 EAV 行数 |
+| `max_hits_per_query` | `5` | `analysis_hits` 中每个 query 保留的 EAV 行数；`0`/null/空均按 `5` 处理（该上限不可关闭） |
 
 ### 比对列映射键
 
@@ -428,6 +431,7 @@ database_mode: mutable_cache
 
 ```text
 analysis name
++ tool 名（recipe 所属的 `tools:` 键）
 + file_id
 + 输入内容哈希
 + 渲染后的 arguments
@@ -450,8 +454,8 @@ analysis name
 也不会重新解析已保存的输出，新列契约只对真正重新执行的作业生效。需要强制重跑时使用
 `--force`。
 
-精确身份未命中时的第二级续跑（输出验证收养）：如果同一 `(analysis, file_id)` 存在
-一条旧的 `completed` 作业，其输入内容哈希与当前一致，且其记录的输出 artifact 仍在
+精确身份未命中时的第二级续跑（输出验证收养）：如果同一 `(analysis, file_id)` 最近一条
+`completed` 作业的输入内容哈希与当前一致，且其记录的输出 artifact 仍在
 磁盘上、逐字节哈希与记录相同，`operon` 不会重算，而是把该输出收养进当前指纹——
 以当前参数指纹/数据库身份插入一条指向同一输出的新 `completed` 行（关联原
 `workflow_run_id`），并在 `changes` 审计表中针对这条新的 `analysis_job` 行记录收养
@@ -508,7 +512,8 @@ CPU 亲和性和运行时线程变量被排除——线程数已经参与参数�
 
 当项目使用 Slurm 执行后端（`project.yaml` 的 `execution.backend: slurm`，或命令行
 `--backend slurm`）时，所有 recipe 默认共享 `execution.slurm` 的资源设置。单个
-recipe 可以用 `slurm:` mapping 覆盖其中的同名字段（空值与空字符串不会覆盖），
+recipe 可以用 `slurm:` mapping 覆盖其中的同名字段（null 与空字符串不覆盖标量字段；
+`extra_sbatch: []` 这样的空列表会清空项目级取值），
 例如给 BUSCO 单独调整内存与时限：
 
 ```yaml
@@ -531,7 +536,7 @@ tools:
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `partition` | 空 | Slurm 分区；空表示不写 `--partition` |
-| `time` | `24:00:00` | 作业时限 |
+| `time` | 空 | 作业时限；空表示不写 `--time`，作业使用集群默认时限 |
 | `mem_gb` | `0` | 内存上限（GB）；`0` 表示不写 `--mem` |
 | `extra_sbatch` | `[]` | 追加的 `#SBATCH` 行，如 `["--gres=gpu:1"]` |
 | `setup_commands` | `[]` | 插入在命令前的行，如 `["module load blast/2.15"]` |

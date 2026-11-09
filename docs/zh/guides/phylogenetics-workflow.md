@@ -59,7 +59,7 @@ analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_
 operon adopt --from-manifest adopt_manifest.tsv
 ```
 
-role 由工作流自由命名。每个产物实体化到 `analysis/adopted/<entity_id>/` 下（树文件通常探测为 `other`，比对为 `fasta`；目录产物按 `format: directory`、`compression: none` 收养），继承 ingest 的幂等/冲突不变量，并写入指回输入的 `file_lineage` 谱系边。整批在同一事务中提交；失败时只删除本批新建的产物。各亚族序列集这类数据决定数量的单元**不**在这里逐条手写收养——下一步改用 fanout 从已收养的指派表扇出。
+收养机制——实体化到 `analysis/adopted/<entity_id>/`、ingest 的幂等/冲突不变量、单事务批量提交与回滚——与任何其他 adopt 相同，见[回注册外部工作流产出](external-analysis.md#回注册外部工作流产出adopt)；树文件通常探测为 `other`，比对为 `fasta`，目录为 `format: directory`。各亚族序列集这类数据决定数量的单元**不**在这里逐条手写收养——下一步改用 fanout 从已收养的指派表扇出。
 
 ## 第四步：扇出数据决定的单元，再做级联分析
 
@@ -111,7 +111,7 @@ operon analyze --analysis iqtree_subfamily
 
 `analyze` 对每个单元文件跑一个作业，串行或经配置的后端执行；缓存、收养与审计与任何其他输入完全一致。再往上的编排——重试、并行，以及针对单元产物的 TreeShrink/Notung 批处理——照旧归工作流管理器。
 
-收养与扇出的文件在其他方面都是普通 manifest 成员：带精确 role 的收养文件仍按 `entity_type + file_role + format` 被选中，FASTA 可以用 `operon qc --file-id FIL_...` 重新 QC，结果与针对原始文件的分析一样流入 `analysis_results`/`analysis_alignments`/`qc_results`，因此每一轮流程都可以建立在上一轮的产物之上。
+收养与扇出的文件在其他方面都是普通 manifest 成员：FASTA 可以用 `operon qc --file-id FIL_...` 重新 QC，结果与针对原始文件的分析一样流入 `analysis_results`/`analysis_alignments`/`qc_results`，因此每一轮流程都可以建立在上一轮的产物之上。
 
 ## 第五步：评估并发布
 
@@ -184,11 +184,8 @@ operon query "SELECT subject_id, hit_rank, query_start, query_end, evalue, bitsc
    流程。建树前可在任意机器上用 `operon alignment-qc --alignment ... --outdir ...`
    度量比对（逐序列与逐列指标），再把比对与树 adopt 回库。
 5. **物种树定年**：`operon timetree calibrations --taxa A,B,C --out calibrations.tsv`
-   从 TimeTree 编制 MCMCTree 标定先验（每次查询都会打印必须引用的 Kumar et al. 2022
-   文献）；把 TSV 与定年输入一起 adopt。更严格的审阅约束流程用
-   `operon timetree fetch` 把逐对原始证据冻结为不可变快照，再用
-   `operon timetree calibrate` 只把经批准、带理由的软界标定编译到有根树上。见
-   [timetree](../reference/cli-analysis.md#timetree)。
+   编制 MCMCTree 标定先验；把 TSV 与定年输入一起 adopt。更严格的审阅约束流程
+   （`timetree fetch` + `timetree calibrate`）见[用 TimeTree 定年](#用-timetree-定年)。
 
 ## 用 TimeTree 定年
 

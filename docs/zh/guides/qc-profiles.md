@@ -1,4 +1,4 @@
-# QC profile
+# QC Profiles
 
 ## 创建 QC profile
 
@@ -51,7 +51,7 @@ operon report decisions --profile phylogenomics_v1
 
 每次 evaluate 都会保存 profile 内容快照，并追加 decision 历史。
 
-### 12.1 按分类器指标选择门限：`value_by`
+## 按另一指标的取值选择门限：`value_by`
 
 当一个数值指标的合理门限取决于另一个指标时，可用 `value_by`。绿色植物 BUSCO
 auto-lineage 是典型场景：整个 Viridiplantae 不适合使用同一个 lineage，也不应要求用户
@@ -108,7 +108,7 @@ warning rule 主要使用 `warning` 或 `ignore`；其他策略不会把 warning
 未配置类别时静默放行。`ignore` 的缺省 code 为 `{SELECTOR}_IGNORED`，可用
 `unknown_code` 覆盖。
 
-### 12.2 用 `source.qc_stage` 固定指标来源
+## 用 `source.qc_stage` 固定指标来源
 
 同一实体可以同时拥有 auto-lineage 和多个固定-lineage BUSCO 结果。正式判定不能依赖
 “同名指标里最后写入哪一条”，因此规则可显式限定来源：
@@ -126,7 +126,7 @@ source:
   qc_stage: analysis:busco_lineage:lineage_dataset=fabales_odb12.2
 ```
 
-### 12.3 内置绿色植物 BUSCO profile
+## 内置绿色植物 BUSCO profile
 
 新项目会生成：
 

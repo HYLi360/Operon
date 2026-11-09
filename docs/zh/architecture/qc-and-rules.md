@@ -40,7 +40,7 @@ annotation QC 对运行时读取的 assembly/protein 关联输入执行同一身
 
 外部工具指标可通过 `import-qc` 进入同一长表，也可通过 `run-external` 以结构化方式执行并保存 provenance。
 
-FASTQ 在单次解析中累计 256 以内的质量字符直方图，再按显式 Phred offset 计算
+FASTQ 在单次解析中累计 127 档质量字符直方图（合法 ASCII 质量字符范围），再按显式 Phred offset 计算
 Q20/Q30，不二次读取或重复解压文件。默认 offset 为现代 Phred+33；`auto` 在可观察
 字符范围重叠时仍按 33 计算，但通过 `quality_encoding=ambiguous_assumed_phred33`
 保留不确定性。重复率使用确定性的前 N 条 reads 精确计数，记录
