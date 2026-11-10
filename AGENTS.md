@@ -60,6 +60,8 @@ Operon 是一个 Python 编写、以文件为载体的数据库系统，面向�
 ├── export.py                 # 不可变 release 与选择性导出
 ├── fanout.py                 # 把已登记序列文件按数据派生拆分为 per-unit FASTA，
 │                             # 落在 `analysis/derived/` 下，由配方 `file_role_prefix` 选择
+├── features.py               # GFF3/GTF 扁平化 feature 索引：`index/features/` 下的
+│                             # per-file Parquet 查询缓存（EXT-8），支撑 `operon features`
 ├── files.py                  # 不可变清单归档与校验
 ├── health.py                 # 项目健康巡检：doctor 与 TUI Home 共用的 attention 聚合
 ├── import_wizard.py
