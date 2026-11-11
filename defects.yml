@@ -2798,3 +2798,67 @@ defects:
   fix_commit: null
   fixed_in: null
   regression_tests: []
+- id: ODR-98
+  title: |
+    The sdist filename assertion reads installed metadata while the build derives the version from the
+    live tree
+  reported: '2026-11-11'
+  introduced_in: '3f2fc1ac760a684e08e54221621f156e358fa245'
+  affected: |
+    tests/integration/test_python_packaging.py::test_sdist_contains_complete_project_source on any
+    checkout whose installed OperonDBS metadata (OperonDBS.egg-info, written by the last editable
+    install or test build) predates the tree state: a dirty file, a commit past the last tag, or a
+    moved/deleted tag changes the setuptools-scm derivation (dev/dirty local segments) while the
+    assertion still compares against the frozen installed version. CI stays green because it installs
+    the package right after a clean checkout; local runs fail deterministically after any commit made
+    since the last install.
+  severity: 'medium'
+  component: 'tests'
+  status: 'confirmed'
+  reproduction: |
+    Observed 2026-11-11 on master@3003822, clean tree six commits past v0.10.2: python -m setuptools_scm
+    derives 0.10.3.dev6+g3003822d4, the installed metadata reads 0.10.3, and
+    test_sdist_contains_complete_project_source fails asserting archive.name == operondbs-0.10.3.tar.gz
+    while build_meta.build_sdist produced operondbs-0.10.3.dev6+g3003822d4.tar.gz (1 failed, 6 passed).
+    A dirty tree fails the same way through the .dYYYYMMDD local segment. Introduced by the
+    setuptools-scm migration (3f2fc1a): _dist_version() kept reading installed metadata, which that same
+    change declared frozen at install time.
+  disposition: |
+    Open. Fix candidate: derive the expected version with setuptools_scm.get_version(root=ROOT) — the
+    same source the build backend reads — and pin the build to that exact value through
+    SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS (the mechanism the wheels job already uses), so the
+    expected name and the built name cannot drift.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-99
+  title: |
+    The publish workflow kept release-event fields after its trigger moved to tag pushes, and its test
+    gate fails fast instead of waiting
+  reported: '2026-11-11'
+  introduced_in: '3003822d425489d13fa299a0ec42b7780e71074e'
+  affected: |
+    .github/workflows/publish.yml on any v* tag push. The trigger is push tags, but three steps still
+    read github.event.release.tag_name, which is empty on push events: the checkout ref falls back to
+    the pushed sha, RELEASE_TAG is empty, and the source-distribution assertion tag == v<derived
+    version> compares against an empty string. Independently, the "Require a Green test.yml Run on the
+    Tagged Commit" step queries the test run once and fails immediately while it is queued or in
+    progress (a null conclusion renders as "no run"), so pushing the commit and its tag together always
+    fails the gate before the test run can conclude.
+  severity: 'medium'
+  component: 'ci'
+  status: 'confirmed'
+  reproduction: |
+    Run 42999666518 (publish, tag v0.10.3, push) failed after 13 s on 2026-11-11, while run 42999666309
+    (test, master, same head commit, started the same second) concluded success after 23m25s: the gate
+    checked once at ~13 s, saw no concluded run, and exited 1; the tag was deleted afterwards. Even with
+    a concluded green run, the stale release-event fields would next fail the source-distribution tag
+    assertion with an empty RELEASE_TAG.
+  disposition: |
+    Open. Fix candidate: read the tag from github.ref_name (defined for tag pushes), and turn the gate
+    into a bounded poll — wait while the run is missing, queued or in progress; fail fast on
+    failure/cancelled/timed_out/startup_failure; succeed on success; 60-minute deadline (observed test
+    runs take 23-38 minutes).
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
