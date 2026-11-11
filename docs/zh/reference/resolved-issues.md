@@ -98,6 +98,8 @@
 | ODR-83 | CLI | `operon features query` 现在会转义表格公式触发符：每个 TSV 单元格在交给 `csv.writer` 前都经过 `escape_formula_text()`，因此以 `=`、`+`、`-`、`@` 开头（或携带 TAB/CR）的 seqid、source、type、id、parent、gene_id、transcript_id 会带前导单引号写出，而不会被当作公式求值——与 ODR-40 为 `sequence_qc.tsv` 与 `schema.write_tsv` 定下的契约一致。非字符串值原样通过，数值列的字节不变。 |
 | ODR-84 | 文件 | ingest 现在把 BAM/CRAM 的压缩记录为 `none`，因为 BGZF/块压缩属于格式本身，canonical 名称保持 `.bam`/`.cram`；显式 `.gz` 后缀或 `--compression` 仍会记录外层压缩。导入预检不再解压这类格式的行，重新与 ingest 路径保持一致；历史行保留其归档路径与压缩值。 |
 | ODR-85 | Tools | `analyze --detach` 强制同一 recipe 只能有一个 detach 子进程：启动在 `.operon/analysis-locks/` 认领 pid/started_at/argv 存活标记（独占建文件，并发认领自然串行化），前一个子进程仍可被信号触达时拒绝重复——其待行 RUNNING 行不再被重复启动的 startup sweep 清扫掉。已退出的子进程会留下过期标记，由下一次 spawn 清收。前台运行不设这道闸。 |
+| ODR-98 | Tests | sdist 文件名断言的期望值改为从树本身推导：`_dist_version()` 读取 `setuptools_scm.get_version(root=ROOT)`——与构建钩子读取同一组 tag 与 pyproject 配置——且 `_build_sdist()` 通过 `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS`（CI wheels 作业的同一机制）把构建钉到该值，因此脏树或与最后 tag 有提交距离的检出上，期望名与产物名都不会漂移。安装时定版的已安装元数据不再参与期望值。 |
+| ODR-99 | CI | 发布工作流改为从 `github.ref_name` 读取 tag——该字段在触发它的 `v*` tag 推送负载中存在，而残留的 `github.event.release.tag_name` 在 push 事件里为空——且闸门从"查一次"改为等待被打 tag 提交的 `test` 运行：缺失、排队与进行中的结论每 30 秒轮询（上限 60 分钟），`failure`/`cancelled`/`timed_out`/`startup_failure` 立即失败并给出重跑指引，`success` 放行。`tests/unit/test_ci_workflow_steps.py` 守卫触发器、release 事件字段的缺席与有界轮询；两棵文档树与 AGENTS.md 同步描述了 tag 推送触发与"分支与 tag 一起推送"的流程。 |
 
 ## K 系列（历史）
 

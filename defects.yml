@@ -2814,7 +2814,7 @@ defects:
     since the last install.
   severity: 'medium'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Observed 2026-11-11 on master@3003822, clean tree six commits past v0.10.2: python -m setuptools_scm
     derives 0.10.3.dev6+g3003822d4, the installed metadata reads 0.10.3, and
@@ -2824,13 +2824,15 @@ defects:
     setuptools-scm migration (3f2fc1a): _dist_version() kept reading installed metadata, which that same
     change declared frozen at install time.
   disposition: |
-    Open. Fix candidate: derive the expected version with setuptools_scm.get_version(root=ROOT) — the
-    same source the build backend reads — and pin the build to that exact value through
-    SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS (the mechanism the wheels job already uses), so the
-    expected name and the built name cannot drift.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+    The expectation is now derived by setuptools_scm.get_version(root=ROOT) - the same tags and
+    pyproject configuration the build hook reads - and _build_sdist() pins the build to that exact value
+    through SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS (the mechanism the CI wheels job uses), so the
+    expected name and the archive name cannot drift; installed metadata, frozen at install time, no
+    longer feeds the expectation.
+  fix_commit: '5b1aa89aa0a1dbcbbc9afb3623c2e550e733acdd'
+  fixed_in: '0.10.3'
+  regression_tests:
+    - tests/integration/test_python_packaging.py::test_sdist_contains_complete_project_source
 - id: ODR-99
   title: |
     The publish workflow kept release-event fields after its trigger moved to tag pushes, and its test
@@ -2847,7 +2849,7 @@ defects:
     fails the gate before the test run can conclude.
   severity: 'medium'
   component: 'ci'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Run 42999666518 (publish, tag v0.10.3, push) failed after 13 s on 2026-11-11, while run 42999666309
     (test, master, same head commit, started the same second) concluded success after 23m25s: the gate
@@ -2855,10 +2857,14 @@ defects:
     a concluded green run, the stale release-event fields would next fail the source-distribution tag
     assertion with an empty RELEASE_TAG.
   disposition: |
-    Open. Fix candidate: read the tag from github.ref_name (defined for tag pushes), and turn the gate
-    into a bounded poll — wait while the run is missing, queued or in progress; fail fast on
-    failure/cancelled/timed_out/startup_failure; succeed on success; 60-minute deadline (observed test
-    runs take 23-38 minutes).
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+    The workflow reads the tag from github.ref_name (defined on the tag-push payload that triggers it),
+    and the gate is now a bounded poll: missing, queued and in-progress conclusions wait (30 s between
+    polls, 60-minute deadline - observed test runs take 23-38 minutes),
+    failure/cancelled/timed_out/startup_failure fail fast with rerun instructions, and success releases
+    the workflow. tests/unit/test_ci_workflow_steps.py guards the trigger, the absence of release-event
+    fields, and the poll loop; both documentation trees and AGENTS.md describe the tag-push release
+    procedure.
+  fix_commit: 'accfa2573e22ddec90ca4dfca7befe2cf14e6bc5'
+  fixed_in: '0.10.3'
+  regression_tests:
+    - tests/unit/test_ci_workflow_steps.py::test_publish_gate_reads_the_tag_push_event_and_waits_for_the_test_run
