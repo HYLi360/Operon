@@ -2868,3 +2868,35 @@ defects:
   fixed_in: '0.10.3'
   regression_tests:
     - tests/unit/test_ci_workflow_steps.py::test_publish_gate_reads_the_tag_push_event_and_waits_for_the_test_run
+- id: ODR-100
+  title: |
+    The pinned sdist build rewrites egg-info to a derivation the build hook never produced on tag-less
+    checkouts
+  reported: '2026-11-12'
+  introduced_in: '5b1aa89ec6a1d0ea7f2a3116fcdf77789c061c716'
+  affected: |
+    tests/integration/test_python_packaging.py on CI tag-less shallow checkouts: pip install -e derives
+    the egg-info version through the setuptools-scm build hook (fallback_version participates, yielding
+    0.0.1.devN+gSHA), while the ODR-98 fix derives the pinned value with bare
+    setuptools_scm.get_version(root=ROOT) (default tag-less guess 0.1.devN+gSHA). The pin makes
+    build_sdist rewrite OperonDBS.egg-info mid-suite to that different value; when the ODR-17 reload and
+    test_cli_version_flag_prints_version_and_exits_zero share an xdist worker, the CLI module-level
+    __version__ binding (old value) no longer matches the reloaded one, and the version contract test
+    fails. Local checkouts with tags derive identical values on both paths and never see it.
+  severity: 'medium'
+  component: 'tests'
+  status: 'confirmed'
+  reproduction: |
+    Run 43048871665, leg pytest (macos-latest, 3.11), 2026-11-11: 1 failed
+    (tests/compatibility/test_python_support.py::test_cli_version_flag_prints_version_and_exits_zero),
+    2819 passed; the assertion diff is "Main program version: 0.0.1.dev1+g99d346fa9" (CLI module binding
+    from suite start) != "0.1.dev1+g99d346fa9" (post-reload binding after the sibling sdist build
+    rewrote egg-info). The other eleven legs and docs passed; the publish gate then failed fast on the
+    red test run as designed.
+  disposition: |
+    Open. Fix candidate: derive the pinned value through the build backend itself
+    (prepare_metadata_for_build_wheel) instead of bare get_version, so the pin can never differ from
+    what the build hook derives under any checkout state.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
