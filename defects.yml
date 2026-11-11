@@ -2814,7 +2814,7 @@ defects:
     since the last install.
   severity: 'medium'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Observed 2026-11-11 on master@3003822, clean tree six commits past v0.10.2: python -m setuptools_scm
     derives 0.10.3.dev6+g3003822d4, the installed metadata reads 0.10.3, and
@@ -2849,7 +2849,7 @@ defects:
     fails the gate before the test run can conclude.
   severity: 'medium'
   component: 'ci'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run 42999666518 (publish, tag v0.10.3, push) failed after 13 s on 2026-11-11, while run 42999666309
     (test, master, same head commit, started the same second) concluded success after 23m25s: the gate
