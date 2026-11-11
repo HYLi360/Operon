@@ -61,40 +61,57 @@ def _sdist_build_lock() -> contextlib.AbstractContextManager[None]:
     return locked()
 
 
-def _build_sdist(output: Path) -> Path:
+def _build_sdist(output: Path, version: str) -> Path:
+    """Build the sdist with its derivation pinned to ``version``.
+
+    ``SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS`` hands the build the exact
+    value returned by :func:`_dist_version` (the same mechanism the CI wheels
+    job uses), so the two derivations cannot drift apart — a dirty tree's
+    date-stamped local segment would otherwise tick over if the day changed
+    between deriving the expectation and building the archive.
+    """
     from setuptools import build_meta
 
     output.mkdir(parents=True, exist_ok=True)
     previous_cwd = Path.cwd()
+    pin = "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS"
+    previous_pin = os.environ.get(pin)
+    os.environ[pin] = version
     with _sdist_build_lock():
         try:
             os.chdir(ROOT)
             filename = build_meta.build_sdist(os.fspath(output))
         finally:
             os.chdir(previous_cwd)
+            if previous_pin is None:
+                os.environ.pop(pin, None)
+            else:
+                os.environ[pin] = previous_pin
     return output / filename
 
 
 def _dist_version() -> str:
     """The version the build names the distribution with.
 
-    Read with a reload under the machine-wide build lock (like every other
-    metadata lookup in this module) so a sibling xdist worker's egg_info
-    rewrite never yields a half-stale value.
+    The archive name comes from setuptools-scm's live derivation of this tree,
+    so the expectation is derived the same way — ``get_version`` reads the
+    same tags and the same pyproject configuration as the build hook, under
+    every tree state (dirty files, commits past the last tag, the tag-less
+    fallback). Installed metadata is frozen at install time and drifts with
+    every later change, so it never feeds the expected name (ODR-98).
     """
-    import importlib
+    from setuptools_scm import get_version
 
-    with _sdist_build_lock():
-        importlib.reload(operon)
-        return operon.__version__
+    return get_version(root=ROOT)
 
 
+@pytest.mark.bug("ODR-98")
 @pytest.mark.filterwarnings("ignore:pkg_resources is deprecated:DeprecationWarning")
 def test_sdist_contains_complete_project_source(tmp_path):
     pyproject = _load_pyproject()
     name = re.sub(r"[-_.]+", "-", pyproject["project"]["name"]).lower()
     version = _dist_version()
-    archive = _build_sdist(tmp_path)
+    archive = _build_sdist(tmp_path, version)
     assert archive.name == f"{name}-{version}.tar.gz"
     prefix = f"{name}-{version}/"
     required = {
