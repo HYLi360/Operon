@@ -2885,7 +2885,7 @@ defects:
     fails. Local checkouts with tags derive identical values on both paths and never see it.
   severity: 'medium'
   component: 'tests'
-  status: 'confirmed'
+  status: 'verified'
   reproduction: |
     Run 43048871665, leg pytest (macos-latest, 3.11), 2026-11-11: 1 failed
     (tests/compatibility/test_python_support.py::test_cli_version_flag_prints_version_and_exits_zero),
@@ -2894,9 +2894,13 @@ defects:
     rewrote egg-info). The other eleven legs and docs passed; the publish gate then failed fast on the
     red test run as designed.
   disposition: |
-    Open. Fix candidate: derive the pinned value through the build backend itself
-    (prepare_metadata_for_build_wheel) instead of bare get_version, so the pin can never differ from
-    what the build hook derives under any checkout state.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+    _dist_version() now reads the fallback from the same tree's pyproject and passes it into
+    setuptools_scm.get_version, keeping the expectation identical to the build hook's derivation under
+    every checkout state, and takes the tree root as a parameter. The ODR-100 regression test builds a
+    tag-less git repository with the same [tool.setuptools_scm] fallback and asserts the expectation
+    equals prepare_metadata_for_build_wheel's derivation - the two paths disagree exactly there, and did
+    so before the fix (0.1.dev1+g428c57280 != 0.0.1.dev1+g428c57280).
+  fix_commit: '853e7e190f31a331d545cf343c9609557007c1b5'
+  fixed_in: '0.10.3'
+  regression_tests:
+    - tests/integration/test_python_packaging.py::test_dist_version_matches_the_build_hooks_derivation_on_tagless_checkouts

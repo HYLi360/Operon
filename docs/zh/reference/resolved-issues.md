@@ -100,6 +100,7 @@
 | ODR-85 | Tools | `analyze --detach` 强制同一 recipe 只能有一个 detach 子进程：启动在 `.operon/analysis-locks/` 认领 pid/started_at/argv 存活标记（独占建文件，并发认领自然串行化），前一个子进程仍可被信号触达时拒绝重复——其待行 RUNNING 行不再被重复启动的 startup sweep 清扫掉。已退出的子进程会留下过期标记，由下一次 spawn 清收。前台运行不设这道闸。 |
 | ODR-98 | Tests | sdist 文件名断言的期望值改为从树本身推导：`_dist_version()` 读取 `setuptools_scm.get_version(root=ROOT)`——与构建钩子读取同一组 tag 与 pyproject 配置——且 `_build_sdist()` 通过 `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERONDBS`（CI wheels 作业的同一机制）把构建钉到该值，因此脏树或与最后 tag 有提交距离的检出上，期望名与产物名都不会漂移。安装时定版的已安装元数据不再参与期望值。 |
 | ODR-99 | CI | 发布工作流改为从 `github.ref_name` 读取 tag——该字段在触发它的 `v*` tag 推送负载中存在，而残留的 `github.event.release.tag_name` 在 push 事件里为空——且闸门从"查一次"改为等待被打 tag 提交的 `test` 运行：缺失、排队与进行中的结论每 30 秒轮询（上限 60 分钟），`failure`/`cancelled`/`timed_out`/`startup_failure` 立即失败并给出重跑指引，`success` 放行。`tests/unit/test_ci_workflow_steps.py` 守卫触发器、release 事件字段的缺席与有界轮询；两棵文档树与 AGENTS.md 同步描述了 tag 推送触发与"分支与 tag 一起推送"的流程。 |
+| ODR-100 | Tests | 被钉住的 sdist 构建不再可能把 `OperonDBS.egg-info` 改写成安装从未产生过的版本：`_dist_version()` 从同一棵树的 pyproject 读取 `fallback_version` 并显式传给 `setuptools_scm.get_version`——裸调用会跳过 fallback，在无 tag 检出（CI 的浅克隆）上与构建钩子分叉（钩子推导 `0.0.1.devN+gSHA`，裸调用猜出 `0.1.devN+gSHA`）。ODR-100 回归测试搭建一个带同样 fallback 的无 tag git 仓库，断言期望值等于 `prepare_metadata_for_build_wheel` 的推导——两条路径恰好只在那种检出上分叉。 |
 
 ## K 系列（历史）
 
