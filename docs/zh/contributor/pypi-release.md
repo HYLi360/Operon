@@ -8,17 +8,18 @@ PEP 517 构建依赖仅包含 setuptools、Cython 与 setuptools-scm。
 
 ## GitHub Actions 发布链路
 
-`.github/workflows/publish.yml` 只在 GitHub Release 正式发布时运行。它先验证 release
+`.github/workflows/publish.yml` 在推送 `v*` tag 时运行。它先验证 release
 tag 严格等于 setuptools-scm 在该提交上推导出的版本（`v<version>`），再构建：
 
 - 一份源码分发包；
-- CPython 3.10-3.14 的 manylinux x86-64 wheel；
-- CPython 3.10-3.14 的 macOS Intel wheel；
-- CPython 3.10-3.14 的 macOS Apple Silicon wheel。
+- CPython 3.10-3.15 的 manylinux x86-64 wheel；
+- CPython 3.10-3.15 的 macOS Intel wheel；
+- CPython 3.10-3.15 的 macOS Apple Silicon wheel。
 
 `verify-release` job 会先于其他所有 job 运行，且它们都依赖它：它检出 release tag，
-   并断言"该提交的 `test` workflow 结论为 `success`"以及
-   `scripts/release-preflight.sh --ci --tag <tag>` 通过。它会先导入维护者公开的 GPG 公钥，
+   **等待**该提交的 `test` workflow 得出 `success` 结论——分支与其 tag 一起推送时，`test` 与
+   `publish` 两个工作流同一时刻启动，因此闸门采用轮询（上限 60 分钟）而不是与 test 运行竞速——
+   并要求 `scripts/release-preflight.sh --ci --tag <tag>` 通过。它会先导入维护者公开的 GPG 公钥，
    因此 tag 的签名是被**真正验证**过，而不只是"存在签名"；若该公钥不可用，这一项报 `skip`
    而不是 `fail`。因此，tag 落在 CI 为红（或压根
    被取消、没跑完）的提交上时，什么都不会被构建，更不会被上传。
@@ -49,9 +50,12 @@ workflow 填 `publish.yml`，environment 填 `pypi`。GitHub environment 名称�
 3. 在发布提交上打 tag：`git tag -s -m "Operon vX.Y.Z" vX.Y.Z`。打 tag 不改变任何提交，因此
    该提交已录得的绿色 `test` run 与矩阵证据，以及读取同一检出的 preflight，在打 tag 之后
    仍然有效。不要复用仍指向旧软件包元数据的 tag。
-4. 等待该 tag 对应提交的 `test` workflow 全部通过。若该 run 缺失、被取消或为红，
-   发布链路会拒绝构建与上传；先用 `gh run rerun <run-id>` 给它补一轮，再发布。
-5. 从该 tag 创建 GitHub Release；如仍需检查发布说明可先保存为 draft，确认后发布。
+4. 把分支与 tag 一起推送：`git push origin master vX.Y.Z`。tag 推送会启动 publish
+   工作流，其闸门随即等待该提交的 `test` 运行得出结论（实测单次 23-38 分钟）。若该运行
+   为红或被取消，什么都不会被构建与上传：修复提交，或用 `gh run rerun <run-id>` 重跑测试，
+   然后删除并重新推送 tag 以再次触发发布。
+5. 可选：从该 tag 创建 GitHub Release 来承载发布说明。发布它不会触发任何工作流——
+   发布链路已在 tag 推送时运行。
 6. 在 PyPI 的 `OperonDBS` 项目页核对文件与元数据。
 
 PyPI 同一版本的文件不可覆盖。如果错误内容已经发布，应该发布新版本：修复内容，在新发布提交上

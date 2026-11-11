@@ -231,8 +231,9 @@ sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html  # 每种语言
 任何改动后都要跑**相关类目**；在认为工作完成前**必须**跑全量套件。
 
 CI（`.github/workflows/test.yml`）在 Python 3.10–3.15 上跑 pytest 与严格 Sphinx 构建。发布只发到
-PyPI，且 `.github/workflows/publish.yml` 的 `verify-release` 作业必须看到被打 tag 提交的 `test`
-运行为 `success` **且** `scripts/release-preflight.sh --ci --tag <tag>` 通过，才会构建与上传；
+PyPI：推送 `v*` tag 触发 `.github/workflows/publish.yml`，其 `verify-release` 作业会**等待**被打
+tag 提交的 `test` 运行得出 `success`（提交与 tag 同时推送时两个工作流同时启动，闸门以带时限的轮询
+等待而非立即判定），并要求 `scripts/release-preflight.sh --ci --tag <tag>` 通过，之后才构建与上传；
 细节见 `docs/*/contributor/pypi-release.md`。
 
 CI 的每一步都必须有名字，且名字要能独立说明它跑了什么：红绿是从 GitHub 报告的步骤列表读出来的，一个

@@ -99,3 +99,37 @@ def test_a_step_never_bundles_the_test_suite_with_its_install(file_name: str) ->
             f"{file_name}: {job_name} runs pytest in a step named "
             f"{step.get('name')!r}, which does not say it ran the tests"
         )
+
+
+@pytest.mark.bug("ODR-99")
+def test_publish_gate_reads_the_tag_push_event_and_waits_for_the_test_run() -> None:
+    """The publish trigger is the tag push, and its gate polls ``test.yml``.
+
+    The workflow moved from GitHub Release publications to ``v*`` tag pushes,
+    so every event field it reads has to exist on a push payload —
+    ``github.event.release.tag_name`` is empty there and emptied the tag
+    assertion. And because a release pushes the commit and its tag together,
+    the test run the gate needs is still queued or in progress when the gate
+    first looks: the step has to poll for a conclusion within a deadline
+    instead of checking once and failing on the run's absence.
+    """
+    raw = (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(
+        encoding="utf-8"
+    )
+    publish = yaml.safe_load(raw)
+    trigger = publish.get("on", publish.get(True))
+    assert trigger["push"]["tags"] == ["v*"], trigger
+
+    assert "github.event.release" not in raw, (
+        "publish.yml runs on tag pushes, where the release event payload — and "
+        "github.event.release.tag_name with it — does not exist"
+    )
+
+    steps = publish["jobs"]["verify-release"]["steps"]
+    gate = next(step for step in steps if "test.yml" in str(step.get("name", "")))
+    script = str(gate["run"])
+    assert '"pending"' in script and "sleep" in script and "deadline" in script, (
+        "the gate must poll the tagged commit's test run — treat a missing or "
+        "in-progress conclusion as pending, sleep between polls, and give up at "
+        "a deadline — instead of checking once while the run is still in flight"
+    )

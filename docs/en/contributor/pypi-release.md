@@ -8,18 +8,21 @@ The PEP 517 build dependencies contain only setuptools, Cython, and setuptools-s
 
 ## GitHub Actions release
 
-`.github/workflows/publish.yml` runs only when a GitHub Release is published.
+`.github/workflows/publish.yml` runs when a `v*` tag is pushed.
 It validates that the release tag equals the version setuptools-scm derives on that exact commit (`v<version>`), then builds:
 
 - one source distribution;
-- CPython 3.10-3.14 manylinux x86-64 wheels;
-- CPython 3.10-3.14 macOS Intel wheels; and
-- CPython 3.10-3.14 macOS Apple Silicon wheels.
+- CPython 3.10-3.15 manylinux x86-64 wheels;
+- CPython 3.10-3.15 macOS Intel wheels; and
+- CPython 3.10-3.15 macOS Apple Silicon wheels.
 
 A `verify-release` job runs before every other job, and they all need it: it
-checks out the release tag and refuses to continue unless the `test` workflow's run
-for that exact commit concluded `success` and `scripts/release-preflight.sh --ci
---tag <tag>` passes. It imports the maintainer's published GPG key first, so the
+checks out the release tag, waits for the `test` workflow's run on that exact
+commit to conclude `success` — the branch and its tag pushed together start the
+`test` and `publish` workflows at the same moment, so the gate polls (with a
+60-minute deadline) instead of racing the test run — and requires
+`scripts/release-preflight.sh --ci --tag <tag>` to pass. It imports the
+maintainer's published GPG key first, so the
 tag's signature is verified rather than merely present; without that key the gate
 reports the check as skipped instead of failed. A tag on a commit whose CI is red — or cancelled before it ran
 — therefore builds and uploads nothing.
@@ -61,11 +64,14 @@ manual approval before the final upload.
    for that exact commit — and the preflight that reads the same checkout —
    stay valid after tagging. Never reuse a tag that points to older package
    metadata.
-4. Wait for the `test` workflow on the tagged commit to pass. The publish
-   workflow refuses to build or upload while that run is missing, cancelled, or red;
-   give such a commit its own run with `gh run rerun <run-id>` and publish again.
-5. Create a GitHub Release from that tag, initially as a draft if release notes
-   still need review, then publish it.
+4. Push the branch and the tag together: `git push origin master vX.Y.Z`.
+   The tag push starts the publish workflow, whose gate then waits for the
+   `test` run on that exact commit to conclude (observed runs take 23-38
+   minutes). If that run is red or cancelled, nothing is built or uploaded:
+   fix the commit or rerun the tests with `gh run rerun <run-id>`, then delete
+   and re-push the tag to trigger publishing again.
+5. Optionally create a GitHub Release from the tag to carry the release notes.
+   Publishing it triggers nothing — the workflow already ran on the tag push.
 6. Verify the files and metadata on the `OperonDBS` PyPI project page.
 
 PyPI files are immutable for a given version. If an upload has already been

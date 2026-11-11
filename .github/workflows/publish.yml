@@ -20,7 +20,7 @@ jobs:
       - name: Check Out the Tagged Commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set Up the Python Environment
@@ -29,27 +29,45 @@ jobs:
           python-version: "3.12"
       - name: Upgrade pip and PyYAML
         run: python -m pip install --upgrade pip pyyaml
-      - name: Require a Green test.yml Run on the Tagged Commit
+      - name: Wait for a Green test.yml Run on the Tagged Commit
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # A commit and its tag pushed together start the test and publish
+          # workflows at the same moment, so the run this gate needs is
+          # queued or in progress when it first looks: poll until the test
+          # run concludes instead of failing on its absence.
           sha=$(git rev-parse HEAD)
-          conclusion=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=$sha&per_page=1" \
-            --jq '.workflow_runs[0].conclusion // "no run"')
-          echo "$RELEASE_TAG -> $sha: test.yml concluded '$conclusion'"
-          if [ "$conclusion" != "success" ]; then
-            echo "::error::test.yml on $sha concluded '$conclusion'; rerun it (gh run rerun) before releasing"
-            exit 1
-          fi
+          echo "$RELEASE_TAG -> $sha: waiting for test.yml to conclude"
+          deadline=$(($(date +%s) + 3600))
+          while :; do
+            conclusion=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=$sha&per_page=1" \
+              --jq '.workflow_runs[0].conclusion // "pending"')
+            case "$conclusion" in
+              success)
+                echo "$RELEASE_TAG -> $sha: test.yml concluded 'success'"
+                exit 0
+                ;;
+              failure|cancelled|timed_out|startup_failure)
+                echo "::error::test.yml on $sha concluded '$conclusion'; rerun it (gh run rerun), then delete and re-push the tag"
+                exit 1
+                ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::test.yml on $sha has not concluded within 60 minutes (last state: '$conclusion'); push the commit to master so CI tests it, then re-push the tag"
+              exit 1
+            fi
+            sleep 30
+          done
       - name: Import the Maintainer's Published GPG Key
         run: |
           curl -sSL "https://github.com/${{ github.repository_owner }}.gpg" | gpg --import
           gpg --list-keys --with-colons | grep '^pub' | wc -l
       - name: Run the Release Preflight
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: scripts/release-preflight.sh --ci --tag "$RELEASE_TAG"
 
   source-distribution:
@@ -69,7 +87,7 @@ jobs:
         run: python -m pip install --upgrade build twine setuptools-scm
       - name: Verify the Release Tag Matches the Derived Version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: >-
           python -c "import os, setuptools_scm;
           expected = f'v{setuptools_scm.get_version()}'; actual = os.environ['RELEASE_TAG'];
