@@ -23,13 +23,12 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
-PYPROJECT = ROOT / "pyproject.toml"
 
 pytestmark = pytest.mark.integration
 
 
-def _load_pyproject() -> dict:
-    with PYPROJECT.open("rb") as fh:
+def _load_pyproject(root: Path = ROOT) -> dict:
+    with (root / "pyproject.toml").open("rb") as fh:
         return tomllib.load(fh)
 
 
@@ -90,19 +89,23 @@ def _build_sdist(output: Path, version: str) -> Path:
     return output / filename
 
 
-def _dist_version() -> str:
+def _dist_version(root: Path = ROOT) -> str:
     """The version the build names the distribution with.
 
     The archive name comes from setuptools-scm's live derivation of this tree,
-    so the expectation is derived the same way — ``get_version`` reads the
-    same tags and the same pyproject configuration as the build hook, under
-    every tree state (dirty files, commits past the last tag, the tag-less
-    fallback). Installed metadata is frozen at install time and drifts with
-    every later change, so it never feeds the expected name (ODR-98).
+    so the expectation is derived the same way. The pyproject
+    ``fallback_version`` has to be passed explicitly: bare
+    ``get_version(root=...)`` skips it and disagrees with the build hook on
+    tag-less checkouts (CI's shallow clones), where a pin derived that way
+    made the sdist build rewrite ``OperonDBS.egg-info`` to a version the
+    install had never produced (ODR-100). Installed metadata is frozen at
+    install time and drifts with every later change, so it never feeds the
+    expected name either (ODR-98).
     """
     from setuptools_scm import get_version
 
-    return get_version(root=ROOT)
+    scm = _load_pyproject(root).get("tool", {}).get("setuptools_scm", {})
+    return get_version(root=root, fallback_version=scm.get("fallback_version"))
 
 
 @pytest.mark.bug("ODR-98")
@@ -146,6 +149,73 @@ def test_sdist_contains_complete_project_source(tmp_path):
         or name.startswith(f"{prefix}tools/")
         for name in names
     )
+
+
+@pytest.mark.bug("ODR-100")
+def test_dist_version_matches_the_build_hooks_derivation_on_tagless_checkouts(tmp_path):
+    """The pinned build can never write a version the install never produced.
+
+    CI checks out tag-less shallow clones: the build hook then derives the
+    fallback-based guess, while bare ``setuptools_scm.get_version(root=...)``
+    skips the pyproject ``fallback_version`` and guesses from scratch. A pin
+    derived through the bare call made the sdist build rewrite
+    ``OperonDBS.egg-info`` mid-suite to a version ``pip install`` had never
+    written, and the in-process version contract test observed the flip
+    (ODR-100). The expectation therefore has to equal the build hook's
+    derivation under a checkout state where the two paths disagree: a
+    tag-less repository.
+    """
+    import subprocess
+
+    repo = tmp_path / "tagless"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text(
+        """\
+        [build-system]
+        requires = ["setuptools>=77", "setuptools-scm>=8"]
+        build-backend = "setuptools.build_meta"
+
+        [project]
+        name = "operon-probe"
+        dynamic = ["version"]
+
+        [tool.setuptools_scm]
+        fallback_version = "0.0.0"
+        """,
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "--all"], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=probe",
+            "-c",
+            "user.email=probe@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "probe",
+        ],
+        cwd=repo,
+        check=True,
+    )
+
+    from setuptools import build_meta
+
+    out = tmp_path / "metadata"
+    out.mkdir()
+    previous_cwd = Path.cwd()
+    try:
+        os.chdir(repo)
+        dist_info = build_meta.prepare_metadata_for_build_wheel(os.fspath(out))
+    finally:
+        os.chdir(previous_cwd)
+    metadata = (out / dist_info / "METADATA").read_text(encoding="utf-8")
+    hook_version = re.search(r"^Version: (.+)$", metadata, re.MULTILINE).group(1)
+
+    assert _dist_version(repo) == hook_version
 
 
 def _requirement_lists(pyproject: dict, section: str) -> list[str]:
