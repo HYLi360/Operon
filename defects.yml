@@ -2919,7 +2919,7 @@ defects:
     that ever reached it, so no CI run had exercised the step green.
   severity: 'medium'
   component: 'ci'
-  status: 'confirmed'
+  status: 'verified'
   reproduction: |
     Run 43058915150 (publish, tag v0.10.3, push), job verify-release, 2026-11-11: the gate waited 23m39s
     for the green test run and passed, the GPG import passed, then "Run the Release Preflight" failed
@@ -2929,9 +2929,12 @@ defects:
     ModuleNotFoundError for setuptools_scm) prints the same "python -m setuptools_scm produced nothing"
     failure.
   disposition: |
-    Open. Fix candidate: install setuptools-scm alongside pip and pyyaml in the verify-release job
-    before the preflight step, with the step renamed to name everything it installs; a workflow guard
-    test keeps the dependency present.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+    The verify-release upgrade step installs setuptools-scm alongside pip and pyyaml (its name lists all
+    three), so the preflight interpreter can derive the version under test;
+    tests/unit/test_ci_workflow_steps.py guards that a pip-install step before the preflight step
+    provides setuptools-scm. Local reproduction: PREFLIGHT_PYTHON=/usr/bin/python3 fails exactly as CI
+    did, the project-venv run passes.
+  fix_commit: '21d8cf2d355c075352ffe769775ce5fdbe8ffee6'
+  fixed_in: '0.10.3'
+  regression_tests:
+    - tests/unit/test_ci_workflow_steps.py::test_the_release_preflight_interpreter_has_setuptools_scm
