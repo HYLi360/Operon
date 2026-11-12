@@ -2904,3 +2904,34 @@ defects:
   fixed_in: '0.10.3'
   regression_tests:
     - tests/integration/test_python_packaging.py::test_dist_version_matches_the_build_hooks_derivation_on_tagless_checkouts
+- id: ODR-101
+  title: 'The CI release preflight runs without setuptools-scm and fails every tag check it can reach'
+  reported: '2026-11-12'
+  introduced_in: '3f2fc1ac760a684e08e54221621f156e358fa245'
+  affected: |
+    .github/workflows/publish.yml verify-release on any v* tag push that gets past the test-run gate:
+    scripts/release-preflight.sh picks $ROOT/.venv/bin/python when present and python3 otherwise, and
+    the runner interpreter (setup-python 3.12) never has setuptools-scm — the job only installs pip and
+    pyyaml. python -m setuptools_scm then produces nothing, the version under test stays empty, and the
+    empty version cascades: the registry report selects every record whose fixed_in is null (ODR-97) as
+    shipping in the empty version, and the tag-name check compares v0.10.3 against v + empty. The
+    setuptools-scm-based version check entered the script in 3f2fc1a, one day after the last publish run
+    that ever reached it, so no CI run had exercised the step green.
+  severity: 'medium'
+  component: 'ci'
+  status: 'confirmed'
+  reproduction: |
+    Run 43058915150 (publish, tag v0.10.3, push), job verify-release, 2026-11-11: the gate waited 23m39s
+    for the green test run and passed, the GPG import passed, then "Run the Release Preflight" failed
+    with three checks — version derivation produced nothing, "records shipping in : 1 / PROBLEM ODR-97
+    ships in but is confirmed with fix_commit None", and "tag name v0.10.3 != v". Local reproduction
+    with the same interpreter condition (PREFLIGHT_PYTHON=/usr/bin/python3, which raises
+    ModuleNotFoundError for setuptools_scm) prints the same "python -m setuptools_scm produced nothing"
+    failure.
+  disposition: |
+    Open. Fix candidate: install setuptools-scm alongside pip and pyyaml in the verify-release job
+    before the preflight step, with the step renamed to name everything it installs; a workflow guard
+    test keeps the dependency present.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
