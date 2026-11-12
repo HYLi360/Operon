@@ -133,3 +133,35 @@ def test_publish_gate_reads_the_tag_push_event_and_waits_for_the_test_run() -> N
         "in-progress conclusion as pending, sleep between polls, and give up at "
         "a deadline — instead of checking once while the run is still in flight"
     )
+
+
+@pytest.mark.bug("ODR-101")
+def test_the_release_preflight_interpreter_has_setuptools_scm() -> None:
+    """``scripts/release-preflight.sh`` derives its version with setuptools-scm.
+
+    The verify-release job's interpreter only holds what the job installs,
+    and the preflight falls back to ``python3`` when no project virtualenv
+    exists — without setuptools-scm the version derivation prints nothing,
+    the version under test stays empty, and every check downstream of it
+    (the registry report, the tag-name comparison) fails on the empty string.
+    """
+    publish = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = publish["jobs"]["verify-release"]["steps"]
+    names = [str(step.get("name", "")) for step in steps]
+    preflight_at = next(i for i, name in enumerate(names) if "Preflight" in name)
+    installs = [
+        i
+        for i, step in enumerate(steps[:preflight_at])
+        if "pip install" in str(step.get("run", ""))
+    ]
+    assert installs and any(
+        "setuptools-scm" in str(steps[i].get("run", "")) for i in installs
+    ), (
+        "verify-release must install setuptools-scm before the preflight runs, "
+        "or python -m setuptools_scm produces nothing and the empty version "
+        "cascades through the registry and tag checks"
+    )

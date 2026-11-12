@@ -27,8 +27,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Upgrade pip and PyYAML
-        run: python -m pip install --upgrade pip pyyaml
+      - name: Upgrade pip, PyYAML and setuptools-scm
+        run: python -m pip install --upgrade pip pyyaml setuptools-scm
       - name: Wait for a Green test.yml Run on the Tagged Commit
         env:
           GH_TOKEN: ${{ github.token }}
